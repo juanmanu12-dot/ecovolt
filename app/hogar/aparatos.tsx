@@ -2,6 +2,8 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert 
 import { useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useFocusEffect } from 'expo-router'
+import Header from '../../components/Header'
+import BottomNav from '../../components/BottomNav'
 
 const TARIFA = 721
 const DAYS = 30
@@ -63,7 +65,7 @@ export default function Aparatos() {
 
     const { error } = await supabase.from('aparatos').insert({
       usuario_id: user.id,
-      nombre: nombre,
+      nombre,
       icono: icon,
       watts: parseFloat(watts),
       horas_dia: parseFloat(horas),
@@ -84,24 +86,30 @@ export default function Aparatos() {
     cargarAparatos()
   }
 
+  const eliminarAparato = async (id: string) => {
+    Alert.alert('Eliminar', '¿Eliminar este aparato?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar', style: 'destructive',
+        onPress: async () => {
+          await supabase.from('aparatos').delete().eq('id', id)
+          cargarAparatos()
+        }
+      }
+    ])
+  }
+
   const totalKwh = devices.filter(d => d.activo).reduce((s, d) => s + calcKwh(d.watts, d.horas_dia), 0)
   const totalCop = devices.filter(d => d.activo).reduce((s, d) => s + calcCop(d.watts, d.horas_dia), 0)
   const pct = Math.min(100, Math.round((totalCop / BUDGET) * 100))
-
   const kwh = parseFloat(watts) && parseFloat(horas) ? calcKwh(parseFloat(watts), parseFloat(horas)) : 0
   const cop = parseFloat(watts) && parseFloat(horas) ? calcCop(parseFloat(watts), parseFloat(horas)) : 0
 
   return (
     <View style={styles.container}>
-      <View style={styles.topBar}>
-        <Text style={styles.brand}>Evocolt</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setShowModal(true)}>
-          <Text style={styles.addBtnText}>+</Text>
-        </TouchableOpacity>
-      </View>
+      <Header showBack title="Mi Inventario" />
 
       <ScrollView style={styles.body}>
-        <Text style={styles.title}>Mi Inventario</Text>
         <Text style={styles.sub}>{totalKwh.toFixed(1)} kWh/mes estimados</Text>
 
         <View style={styles.infoBanner}>
@@ -128,6 +136,9 @@ export default function Aparatos() {
                 style={[styles.toggle, !d.activo && styles.toggleOff]}
                 onPress={() => toggleAparato(d.id, d.activo)}
               />
+              <TouchableOpacity onPress={() => eliminarAparato(d.id)}>
+                <Text style={{ fontSize: 16, color: '#e05252', marginLeft: 4 }}>🗑</Text>
+              </TouchableOpacity>
             </View>
           )
         })}
@@ -150,6 +161,8 @@ export default function Aparatos() {
           <Text style={styles.btnText}>+ Añadir Aparato</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <BottomNav tipo="hogar" />
 
       {showModal && (
         <View style={styles.modalOverlay}>
@@ -237,21 +250,16 @@ export default function Aparatos() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f7f3' },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 50, backgroundColor: '#e8f5ee' },
-  brand: { fontSize: 17, fontWeight: '700', color: '#1a5c3a' },
-  addBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1a5c3a', alignItems: 'center', justifyContent: 'center' },
-  addBtnText: { color: '#fff', fontSize: 22, fontWeight: '300' },
   body: { padding: 20 },
-  title: { fontSize: 22, fontWeight: '900', color: '#1a5c3a', marginBottom: 2 },
   sub: { fontSize: 12, color: '#6b7c74', marginBottom: 12 },
   infoBanner: { backgroundColor: '#e8f5ee', borderRadius: 10, padding: 10, marginBottom: 14 },
   infoText: { fontSize: 13, color: '#0f2e1e' },
-  deviceItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
+  deviceItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
   deviceIcon: { width: 42, height: 42, borderRadius: 10, backgroundColor: '#e8f5ee', alignItems: 'center', justifyContent: 'center' },
   deviceInfo: { flex: 1 },
   deviceName: { fontSize: 13, fontWeight: '600', color: '#0f2e1e' },
   deviceWatts: { fontSize: 11, color: '#6b7c74', marginTop: 1 },
-  badge: { fontSize: 10, fontWeight: '700', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
+  badge: { fontSize: 10, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
   badgeBajo: { backgroundColor: '#e8f5ee', color: '#1a5c3a' },
   badgeMedio: { backgroundColor: '#fdf3e0', color: '#e09052' },
   badgeAlto: { backgroundColor: '#fde8e8', color: '#e05252' },
@@ -260,7 +268,7 @@ const styles = StyleSheet.create({
   consumeBar: { backgroundColor: '#f4f9f6', borderWidth: 1, borderColor: '#b2d8c4', borderRadius: 16, padding: 14, marginVertical: 14 },
   barTrack: { height: 8, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 4, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 4 },
-  btnPrimary: { backgroundColor: '#1a5c3a', borderRadius: 16, padding: 16, alignItems: 'center', marginBottom: 30 },
+  btnPrimary: { backgroundColor: '#1a5c3a', borderRadius: 16, padding: 16, alignItems: 'center', marginBottom: 16 },
   btnSecondary: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#b2d8c4', borderRadius: 16, padding: 16 },
   btnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,46,30,0.45)', justifyContent: 'center', alignItems: 'center', padding: 20 },
