@@ -82,7 +82,7 @@ export default function Registro() {
 
             <Text style={styles.label}>EMPRESA DE ENERGÍA</Text>
             <View style={styles.empresaRow}>
-              {['EPM','Codensa','ESSA','Electricaribe','EdeQ','Otra'].map(e => (
+              {['EPM','Codensa','ESSA','Electricaribe','EMCALI','EdeQ','CHEC','CENS'].map(e => (
                 <TouchableOpacity
                   key={e}
                   style={[styles.empresaBtn, empresaEnergia === e && styles.estratoBtnActive]}
@@ -99,7 +99,7 @@ export default function Registro() {
           <>
             <Text style={styles.label}>EMPRESA DE ENERGÍA</Text>
             <View style={styles.empresaRow}>
-              {['EPM','Codensa','ESSA','Electricaribe','EdeQ','Otra'].map(e => (
+              {['EPM','Codensa','ESSA','Electricaribe','EMCALI','EdeQ','CHEC','CENS'].map(e => (
                 <TouchableOpacity
                   key={e}
                   style={[styles.empresaBtn, empresaEnergia === e && styles.estratoBtnActive]}
