@@ -48,6 +48,9 @@ export default function Registro() {
         <Text style={styles.brand}>Evocolt</Text>
       </View>
       <View style={styles.body}>
+        <TouchableOpacity style={styles.volverBtn} onPress={() => router.back()}>
+          <Text style={styles.volverText}>← Cambiar tipo de cuenta</Text>
+        </TouchableOpacity>
         <Text style={styles.title}>Crear cuenta</Text>
         <Text style={styles.sub}>
           Perfil: {tipo === 'hogar' ? '🏠 Hogar' : tipo === 'estudiante' ? '🎓 Estudiante' : '🏢 Empresa'}
@@ -125,6 +128,8 @@ export default function Registro() {
 }
 
 const styles = StyleSheet.create({
+  volverBtn: { marginBottom: 16, padding: 10 },
+  volverText: { fontSize: 13, color: '#2e8b57', fontWeight: '600' },
   container: { flex: 1, backgroundColor: '#f0f7f3' },
   header: { backgroundColor: '#e8f5ee', alignItems: 'center', paddingVertical: 30, paddingTop: 60 },
   brand: { fontSize: 24, fontWeight: '700', color: '#1a5c3a' },
@@ -145,3 +150,5 @@ const styles = StyleSheet.create({
   btnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   link: { textAlign: 'center', color: '#2e8b57', marginTop: 16, fontSize: 13, marginBottom: 30 },
 })
+
+
