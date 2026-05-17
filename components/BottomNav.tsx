@@ -8,7 +8,7 @@ interface Props {
 const NAV_HOGAR = [
   { label: "Inicio", icon: "🏠", route: "/hogar" },
   { label: "Aparatos", icon: "🔌", route: "/hogar/aparatos" },
-  { label: "Tarifas", icon: "💲", route: "/hogar/tarifas" },
+  { label: "División", icon: "👥", route: "/hogar/division" },
   { label: "Reportes", icon: "📊", route: "/hogar/reportes" },
 ];
 
