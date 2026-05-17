@@ -59,11 +59,20 @@ export default function AparatosEstudiante() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) return;
-    const { data } = await supabase
+    if (!user) {
+      console.log("No hay usuario");
+      return;
+    }
+    console.log("Usuario ID:", user.id);
+
+    const { data, error } = await supabase
       .from("aparatos")
       .select("*")
       .eq("usuario_id", user.id);
+
+    console.log("Aparatos encontrados:", data);
+    console.log("Error:", error);
+
     if (data) setDevices(data);
   };
 
@@ -114,7 +123,6 @@ export default function AparatosEstudiante() {
   };
 
   const eliminarAparato = async (id: string) => {
-    const activos = devices.filter((d) => d.activo);
     if (devices.length <= MIN_APARATOS) {
       Alert.alert(
         "Mínimo",
@@ -200,6 +208,14 @@ export default function AparatosEstudiante() {
             </View>
           );
         })}
+
+        {devices.length === 0 && (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>
+              No tienes aparatos registrados aún.
+            </Text>
+          </View>
+        )}
 
         <View style={styles.consumeBar}>
           <View
@@ -468,6 +484,14 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   btnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  emptyCard: {
+    backgroundColor: "#f4f9f6",
+    borderRadius: 16,
+    padding: 20,
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  emptyText: { fontSize: 13, color: "#6b7c74", textAlign: "center" },
   modalOverlay: {
     position: "absolute",
     top: 0,

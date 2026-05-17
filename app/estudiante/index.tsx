@@ -1,12 +1,12 @@
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-    Dimensions,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Carousel from "react-native-reanimated-carousel";
@@ -15,7 +15,7 @@ import Header from "../../components/Header";
 import { supabase } from "../../lib/supabase";
 
 const { width } = Dimensions.get("window");
-const TARIFA = 721;
+const TARIFA = 821;
 const DAYS = 30;
 
 const CONSEJOS_ESTUDIANTE = [
@@ -61,11 +61,7 @@ const CONSEJOS_ESTUDIANTE = [
   },
 ];
 
-function generarConsejosPersonalizados(
-  aparatos: any[],
-  totalCop: number,
-  presupuesto: number,
-) {
+function generarConsejosPersonalizados(aparatos: any[], totalCop: number) {
   const consejos: any[] = [];
 
   const laptop = aparatos.find(
@@ -94,13 +90,15 @@ function generarConsejosPersonalizados(
     });
   }
 
-  if (totalCop > presupuesto) {
-    const exceso = Math.round(totalCop - presupuesto);
+  const altosConsumo = aparatos.filter(
+    (a) => (a.watts / 1000) * a.horas_dia * DAYS * TARIFA > 20000,
+  );
+  if (altosConsumo.length > 0) {
     consejos.push({
-      icon: "⚠️",
-      titulo: "Superaste tu presupuesto",
-      desc: `Estás COP $${exceso.toLocaleString("es-CO")} por encima de tu presupuesto semanal.`,
-      tipo: "alerta",
+      icon: "⚡",
+      titulo: `${altosConsumo.length} aparato(s) de alto consumo`,
+      desc: `${altosConsumo.map((a: any) => a.nombre).join(", ")} tienen un impacto alto en tu factura mensual.`,
+      tipo: "personalizado",
     });
   }
 
@@ -110,8 +108,9 @@ function generarConsejosPersonalizados(
 export default function EstudianteInicio() {
   const router = useRouter();
   const [nombre, setNombre] = useState("");
+  const [universidad, setUniversidad] = useState("");
   const [totalCop, setTotalCop] = useState(0);
-  const [presupuesto, setPresupuesto] = useState(15000);
+  const [totalKwh, setTotalKwh] = useState(0);
   const [aparatos, setAparatos] = useState<any[]>([]);
   const [consejosPersonalizados, setConsejosPersonalizados] = useState<any[]>(
     [],
@@ -132,13 +131,13 @@ export default function EstudianteInicio() {
 
     const { data: usuario } = await supabase
       .from("usuarios")
-      .select("nombre, presupuesto")
+      .select("nombre, universidad")
       .eq("id", user.id)
       .single();
 
     if (usuario) {
-      setNombre(usuario.nombre);
-      if (usuario.presupuesto) setPresupuesto(usuario.presupuesto);
+      setNombre(usuario.nombre || "");
+      setUniversidad(usuario.universidad || "");
     }
 
     const { data: aparatosData } = await supabase
@@ -149,22 +148,19 @@ export default function EstudianteInicio() {
 
     if (aparatosData) {
       setAparatos(aparatosData);
-      const total = aparatosData.reduce(
-        (s, a) => s + (a.watts / 1000) * a.horas_dia * DAYS * TARIFA,
+      const kwh = aparatosData.reduce(
+        (s, a) => s + (a.watts / 1000) * a.horas_dia * DAYS,
         0,
       );
-      setTotalCop(total);
+      const cop = kwh * TARIFA;
+      setTotalKwh(kwh);
+      setTotalCop(cop);
       setConsejosPersonalizados(
-        generarConsejosPersonalizados(
-          aparatosData,
-          total,
-          usuario?.presupuesto || 15000,
-        ),
+        generarConsejosPersonalizados(aparatosData, cop),
       );
     }
   };
 
-  const pct = Math.min(100, Math.round((totalCop / presupuesto) * 100));
   const miParte = Math.round(factura / personas);
 
   return (
@@ -173,12 +169,12 @@ export default function EstudianteInicio() {
         <Header />
         <ScrollView style={styles.body}>
           <View style={styles.heroCard}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.heroTitle}>
                 ¡Hola, {nombre || "estudiante"}!
               </Text>
               <Text style={styles.heroSub}>
-                Controla tu consumo,{"\n"}ahorra en grande.
+                {universidad ? universidad : "Controla tu consumo"}
               </Text>
             </View>
             <Text style={styles.heroIcon}>🎓</Text>
@@ -186,38 +182,22 @@ export default function EstudianteInicio() {
 
           <View style={styles.card}>
             <Text style={styles.cardLabel}>
-              Tu consumo personal <Text style={styles.cardSub}>Este mes</Text>
+              Tu consumo este mes{" "}
+              <Text style={styles.cardSub}>· Tarifa EPM 2026</Text>
             </Text>
             <Text style={styles.cardAmount}>
               COP ${Math.round(totalCop).toLocaleString("es-CO")}
             </Text>
-            <Text style={styles.cardOk}>
-              {totalCop <= presupuesto
-                ? "✅ Dentro del presupuesto 😊"
-                : "⚠️ Superaste el presupuesto"}
+            <Text style={styles.cardKwh}>
+              {totalKwh.toFixed(1)} kWh · $821/kWh
             </Text>
-          </View>
-
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Presupuesto semanal</Text>
-            <View style={styles.progressBar}>
-              <View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: `${pct}%`,
-                    backgroundColor: pct > 90 ? "#e05252" : "#2e8b57",
-                  },
-                ]}
-              />
-            </View>
-            <View style={styles.progressLabels}>
-              <Text style={styles.progressText}>
-                COP ${Math.round(totalCop).toLocaleString("es-CO")} / $
-                {presupuesto.toLocaleString("es-CO")}
-              </Text>
-              <Text style={styles.progressText}>{pct}%</Text>
-            </View>
+            <Text style={styles.cardOk}>
+              {totalCop < 50000
+                ? "✅ Consumo bajo 😊"
+                : totalCop < 100000
+                  ? "🟡 Consumo moderado"
+                  : "⚠️ Consumo alto"}
+            </Text>
           </View>
 
           <View style={styles.card}>
@@ -229,7 +209,7 @@ export default function EstudianteInicio() {
               COP ${miParte.toLocaleString("es-CO")}
             </Text>
             <Text style={styles.cardSub2}>
-              de COP ${factura.toLocaleString("es-CO")} totales
+              de COP ${factura.toLocaleString("es-CO")} totales estimados
             </Text>
           </View>
 
@@ -243,10 +223,10 @@ export default function EstudianteInicio() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.quickCard}
-              onPress={() => router.push("/estudiante/division")}
+              onPress={() => router.push("/estudiante/simulador")}
             >
-              <Text style={styles.quickIcon}>👥</Text>
-              <Text style={styles.quickLabel}>División</Text>
+              <Text style={styles.quickIcon}>🔬</Text>
+              <Text style={styles.quickLabel}>Simular</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.quickCard}
@@ -359,6 +339,7 @@ const styles = StyleSheet.create({
     color: "#1a5c3a",
     marginBottom: 4,
   },
+  cardKwh: { fontSize: 12, color: "#6b7c74", marginBottom: 4 },
   cardOk: { fontSize: 12, color: "#6b7c74" },
   sectionTitle: {
     fontSize: 14,
@@ -366,16 +347,6 @@ const styles = StyleSheet.create({
     color: "#0f2e1e",
     marginBottom: 12,
   },
-  progressBar: {
-    height: 8,
-    backgroundColor: "#b2d8c4",
-    borderRadius: 4,
-    overflow: "hidden",
-    marginBottom: 6,
-  },
-  progressFill: { height: "100%", borderRadius: 4 },
-  progressLabels: { flexDirection: "row", justifyContent: "space-between" },
-  progressText: { fontSize: 11, color: "#6b7c74" },
   quickRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
   quickCard: {
     flex: 1,
@@ -430,5 +401,3 @@ const styles = StyleSheet.create({
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#b2d8c4" },
   dotActive: { width: 16, borderRadius: 3, backgroundColor: "#1a5c3a" },
 });
-
-
