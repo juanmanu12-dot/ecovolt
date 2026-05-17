@@ -116,8 +116,6 @@ export default function EstudianteInicio() {
     [],
   );
   const [activeIndex, setActiveIndex] = useState(0);
-  const [factura, setFactura] = useState(180000);
-  const [personas, setPersonas] = useState(3);
 
   useEffect(() => {
     cargarDatos();
@@ -161,8 +159,6 @@ export default function EstudianteInicio() {
     }
   };
 
-  const miParte = Math.round(factura / personas);
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
@@ -197,19 +193,6 @@ export default function EstudianteInicio() {
                 : totalCop < 100000
                   ? "🟡 Consumo moderado"
                   : "⚠️ Consumo alto"}
-            </Text>
-          </View>
-
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Tu parte de la factura</Text>
-            <Text style={styles.cardSub2}>
-              Compartida entre {personas} personas
-            </Text>
-            <Text style={styles.cardAmount}>
-              COP ${miParte.toLocaleString("es-CO")}
-            </Text>
-            <Text style={styles.cardSub2}>
-              de COP ${factura.toLocaleString("es-CO")} totales estimados
             </Text>
           </View>
 
@@ -332,7 +315,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   cardSub: { fontSize: 11, fontWeight: "400", color: "#6b7c74" },
-  cardSub2: { fontSize: 11, color: "#6b7c74", marginBottom: 4 },
   cardAmount: {
     fontSize: 28,
     fontWeight: "900",
