@@ -15,7 +15,7 @@ const NAV_HOGAR = [
 const NAV_ESTUDIANTE = [
   { label: "Inicio", icon: "🏠", route: "/estudiante" },
   { label: "Aparatos", icon: "🔌", route: "/estudiante/aparatos" },
-  { label: "División", icon: "👥", route: "/estudiante/division" },
+  { label: "Simular", icon: "🔬", route: "/estudiante/simulador" },
   { label: "Consejos", icon: "💡", route: "/estudiante/consejos" },
 ];
 
