@@ -13,9 +13,9 @@ import Carousel from "react-native-reanimated-carousel";
 import BottomNav from "../../components/BottomNav";
 import Header from "../../components/Header";
 import { supabase } from "../../lib/supabase";
+import { getTarifaHogar } from "../../lib/tarifas";
 
 const { width } = Dimensions.get("window");
-const TARIFA = 721;
 const DAYS = 30;
 
 const CONSEJOS_GENERALES = [
@@ -75,6 +75,7 @@ function generarConsejosPersonalizados(
   aparatos: any[],
   totalCop: number,
   presupuesto: number,
+  tarifa: number,
 ) {
   const consejos: any[] = [];
 
@@ -84,7 +85,7 @@ function generarConsejosPersonalizados(
       a.nombre.toLowerCase().includes("acondicionado"),
   );
   if (ac) {
-    const ahorro = Math.round((ac.watts / 1000) * TARIFA * 30);
+    const ahorro = Math.round((ac.watts / 1000) * tarifa * 30);
     consejos.push({
       icon: "❄️",
       titulo: "Tu A/C es tu mayor gasto",
@@ -95,7 +96,7 @@ function generarConsejosPersonalizados(
 
   const ducha = aparatos.find((a) => a.nombre.toLowerCase().includes("ducha"));
   if (ducha) {
-    const ahorro = Math.round((ducha.watts / 1000) * 0.083 * TARIFA * 30);
+    const ahorro = Math.round((ducha.watts / 1000) * 0.083 * tarifa * 30);
     consejos.push({
       icon: "🚿",
       titulo: "Reduce tu ducha eléctrica",
@@ -112,7 +113,7 @@ function generarConsejosPersonalizados(
   if (nevera) {
     const kwhNevera = (nevera.watts / 1000) * nevera.horas_dia * DAYS;
     const pctNevera =
-      totalCop > 0 ? Math.round(((kwhNevera * TARIFA) / totalCop) * 100) : 0;
+      totalCop > 0 ? Math.round(((kwhNevera * tarifa) / totalCop) * 100) : 0;
     if (pctNevera > 20) {
       consejos.push({
         icon: "🧊",
@@ -124,7 +125,7 @@ function generarConsejosPersonalizados(
   }
 
   const altosConsumo = aparatos.filter(
-    (a) => (a.watts / 1000) * a.horas_dia * DAYS * TARIFA > 50000,
+    (a) => (a.watts / 1000) * a.horas_dia * DAYS * tarifa > 50000,
   );
   if (altosConsumo.length > 0) {
     consejos.push({
@@ -158,6 +159,9 @@ export default function HogarInicio() {
     [],
   );
   const [activeIndex, setActiveIndex] = useState(0);
+  const [tarifa, setTarifa] = useState(821);
+  const [empresaEnergia, setEmpresaEnergia] = useState("EPM");
+  const [estrato, setEstrato] = useState(3);
 
   useEffect(() => {
     cargarDatos();
@@ -171,13 +175,23 @@ export default function HogarInicio() {
 
     const { data: usuario } = await supabase
       .from("usuarios")
-      .select("nombre, presupuesto")
+      .select("nombre, presupuesto, empresa_energia, estrato")
       .eq("id", user.id)
       .single();
 
     if (usuario) {
-      setNombre(usuario.nombre);
+      setNombre(usuario.nombre || "");
       if (usuario.presupuesto) setPresupuesto(usuario.presupuesto);
+      if (usuario.empresa_energia) setEmpresaEnergia(usuario.empresa_energia);
+      if (usuario.estrato) setEstrato(usuario.estrato);
+
+      if (usuario.empresa_energia && usuario.estrato) {
+        const t = await getTarifaHogar(
+          usuario.empresa_energia,
+          usuario.estrato,
+        );
+        setTarifa(t);
+      }
     }
 
     const { data: aparatosData } = await supabase
@@ -188,8 +202,9 @@ export default function HogarInicio() {
 
     if (aparatosData) {
       setAparatos(aparatosData);
+      const tarifaActual = tarifa;
       const total = aparatosData.reduce(
-        (s, a) => s + (a.watts / 1000) * a.horas_dia * DAYS * TARIFA,
+        (s, a) => s + (a.watts / 1000) * a.horas_dia * DAYS * tarifaActual,
         0,
       );
       setTotalCop(total);
@@ -198,6 +213,7 @@ export default function HogarInicio() {
           aparatosData,
           total,
           usuario?.presupuesto || 250000,
+          tarifaActual,
         ),
       );
     }
@@ -226,6 +242,9 @@ export default function HogarInicio() {
             </Text>
             <Text style={styles.cardAmount}>
               COP ${Math.round(totalCop).toLocaleString("es-CO")}
+            </Text>
+            <Text style={styles.cardKwh}>
+              Tarifa {empresaEnergia} · Estrato {estrato} · ${tarifa}/kWh
             </Text>
             <Text style={styles.cardOk}>
               {totalCop <= presupuesto
@@ -379,6 +398,7 @@ const styles = StyleSheet.create({
     color: "#1a5c3a",
     marginBottom: 4,
   },
+  cardKwh: { fontSize: 11, color: "#6b7c74", marginBottom: 4 },
   cardOk: { fontSize: 12, color: "#6b7c74" },
   sectionTitle: {
     fontSize: 14,
