@@ -1,20 +1,20 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import {
-    Alert,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import BottomNav from "../../components/BottomNav";
 import Header from "../../components/Header";
 import { supabase } from "../../lib/supabase";
+import { getTarifaHogar } from "../../lib/tarifas";
 
-const TARIFA_2026 = 821;
 const DAYS = 30;
 
 export default function Division() {
@@ -23,6 +23,9 @@ export default function Division() {
   const [totalCop, setTotalCop] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [nuevoNombre, setNuevoNombre] = useState("");
+  const [tarifa, setTarifa] = useState(821);
+  const [empresaEnergia, setEmpresaEnergia] = useState("EPM");
+  const [estrato, setEstrato] = useState(3);
 
   useFocusEffect(
     useCallback(() => {
@@ -36,6 +39,23 @@ export default function Division() {
     } = await supabase.auth.getUser();
     if (!user) return;
 
+    const { data: usuario } = await supabase
+      .from("usuarios")
+      .select("empresa_energia, estrato")
+      .eq("id", user.id)
+      .single();
+
+    let tarifaReal = 821;
+    if (usuario?.empresa_energia && usuario?.estrato) {
+      setEmpresaEnergia(usuario.empresa_energia);
+      setEstrato(usuario.estrato);
+      tarifaReal = await getTarifaHogar(
+        usuario.empresa_energia,
+        usuario.estrato,
+      );
+      setTarifa(tarifaReal);
+    }
+
     const { data: aparatos } = await supabase
       .from("aparatos")
       .select("watts, horas_dia, activo")
@@ -48,7 +68,7 @@ export default function Division() {
         0,
       );
       setTotalKwh(kwh);
-      setTotalCop(kwh * TARIFA_2026);
+      setTotalCop(kwh * tarifaReal);
     }
   };
 
@@ -78,8 +98,7 @@ export default function Division() {
       Alert.alert("Mínimo", "Debe haber al menos 1 persona");
       return;
     }
-    const nuevas = personas.filter((_, idx) => idx !== i);
-    setPersonas(nuevas);
+    setPersonas(personas.filter((_, idx) => idx !== i));
   };
 
   const cada = Math.round(totalCop / personas.length);
@@ -96,7 +115,7 @@ export default function Division() {
             COP ${Math.round(totalCop).toLocaleString("es-CO")}
           </Text>
           <Text style={styles.hint}>
-            Tarifa 2026: ${TARIFA_2026}/kWh · Basado en tus aparatos activos
+            Tarifa {empresaEnergia} 2026: ${tarifa}/kWh · Estrato {estrato}
           </Text>
         </View>
 
@@ -138,8 +157,8 @@ export default function Division() {
 
         <View style={styles.alertCard}>
           <Text style={styles.alertText}>
-            💡 El cálculo se basa en el consumo promedio de tus aparatos activos
-            con la tarifa vigente de 2026.
+            💡 El cálculo se basa en el consumo de tus aparatos activos con la
+            tarifa {empresaEnergia} 2026 estrato {estrato}.
           </Text>
         </View>
 
@@ -165,7 +184,6 @@ export default function Division() {
           </View>
         </View>
       </ScrollView>
-
       <BottomNav tipo="hogar" />
 
       <Modal visible={showModal} transparent animationType="slide">
@@ -190,7 +208,15 @@ export default function Division() {
                   setNuevoNombre("");
                 }}
               >
-                <Text style={styles.btnSecondaryText}>Cancelar</Text>
+                <Text
+                  style={{
+                    color: "#1a5c3a",
+                    fontWeight: "600",
+                    textAlign: "center",
+                  }}
+                >
+                  Cancelar
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.btnPrimary}
@@ -347,8 +373,6 @@ const styles = StyleSheet.create({
     borderColor: "#b2d8c4",
     borderRadius: 16,
     padding: 14,
-    alignItems: "center",
   },
   btnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
-  btnSecondaryText: { color: "#1a5c3a", fontSize: 14, fontWeight: "600" },
 });
