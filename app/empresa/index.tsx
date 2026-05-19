@@ -8,7 +8,7 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Carousel from "react-native-reanimated-carousel";
@@ -27,6 +27,20 @@ const COLORES = [
   "#e05252",
 ];
 const ICONOS = ["🏭", "🏢", "💡", "🖥️", "🔧", "📦", "🏗️", "⚙️"];
+const MESES = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
 
 const HORARIOS = [
   { label: "Solo lunes", dias: 1, maxHoras: 24 },
@@ -79,8 +93,12 @@ export default function EmpresaInicio() {
   const [tarifa, setTarifa] = useState(1141);
   const [meta, setMeta] = useState(2800000);
   const [sectores, setSectores] = useState<any[]>([]);
+  const [mesActual, setMesActual] = useState(new Date().getMonth());
+  const [anioActual, setAnioActual] = useState(new Date().getFullYear());
   const [showModal, setShowModal] = useState(false);
   const [showMetaModal, setShowMetaModal] = useState(false);
+  const [showCierreModal, setShowCierreModal] = useState(false);
+  const [showNuevoMesModal, setShowNuevoMesModal] = useState(false);
   const [nuevaMeta, setNuevaMeta] = useState("");
   const [secNombre, setSecNombre] = useState("");
   const [secEquipos, setSecEquipos] = useState("");
@@ -89,6 +107,7 @@ export default function EmpresaInicio() {
   const [secHorario, setSecHorario] = useState(HORARIOS[4]);
   const [secIcono, setSecIcono] = useState("🏭");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [userId, setUserId] = useState("");
 
   useFocusEffect(
     useCallback(() => {
@@ -101,6 +120,7 @@ export default function EmpresaInicio() {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return;
+    setUserId(user.id);
 
     const { data: usuario } = await supabase
       .from("usuarios")
@@ -126,6 +146,89 @@ export default function EmpresaInicio() {
       .select("*")
       .eq("usuario_id", user.id);
     if (sects) setSectores(sects);
+
+    verificarCierreMes(user.id);
+  };
+
+  const verificarCierreMes = async (uid: string) => {
+    const ahora = new Date();
+    const mes = ahora.getMonth();
+    const anio = ahora.getFullYear();
+
+    const { data: ultimo } = await supabase
+      .from("historial_empresa")
+      .select("mes, anio, cerrado")
+      .eq("usuario_id", uid)
+      .order("anio", { ascending: false })
+      .order("mes", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (
+      ultimo &&
+      !ultimo.cerrado &&
+      (ultimo.mes !== mes || ultimo.anio !== anio)
+    ) {
+      setShowCierreModal(true);
+    }
+  };
+
+  const cerrarMes = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const ahora = new Date();
+    const mes = ahora.getMonth() === 0 ? 11 : ahora.getMonth() - 1;
+    const anio =
+      ahora.getMonth() === 0 ? ahora.getFullYear() - 1 : ahora.getFullYear();
+
+    const { data: existing } = await supabase
+      .from("historial_empresa")
+      .select("id")
+      .eq("usuario_id", user.id)
+      .eq("mes", mes)
+      .eq("anio", anio)
+      .single();
+
+    if (existing) {
+      await supabase
+        .from("historial_empresa")
+        .update({
+          total_kwh: totalKwh,
+          total_cop: totalCop,
+          meta,
+          sectores: sectores,
+          cerrado: true,
+        })
+        .eq("id", existing.id);
+    } else {
+      await supabase.from("historial_empresa").insert({
+        usuario_id: user.id,
+        mes,
+        anio,
+        total_kwh: totalKwh,
+        total_cop: totalCop,
+        meta,
+        sectores: sectores,
+        cerrado: true,
+      });
+    }
+
+    await supabase.from("historial_empresa").insert({
+      usuario_id: user.id,
+      mes: ahora.getMonth(),
+      anio: ahora.getFullYear(),
+      total_kwh: 0,
+      total_cop: 0,
+      meta,
+      sectores: sectores,
+      cerrado: false,
+    });
+
+    setShowCierreModal(false);
+    setShowNuevoMesModal(true);
   };
 
   const calcularKwh = () => {
@@ -229,7 +332,7 @@ export default function EmpresaInicio() {
       alertas.push({
         color: "#e8f0fa",
         dot: "#4a90d9",
-        text: `Tu consumo supera los 55.000 kWh/mes. Puedes negociar tarifas en el Mercado No Regulado y obtener precios más competitivos.`,
+        text: `Tu consumo supera los 55.000 kWh/mes. Puedes negociar tarifas en el Mercado No Regulado.`,
       });
     if (sectores.length < 3)
       alertas.push({
@@ -254,7 +357,8 @@ export default function EmpresaInicio() {
               <View>
                 <Text style={styles.todayNombre}>{nombreEmpresa}</Text>
                 <Text style={styles.todaySubtitle}>
-                  {empresaEnergia} 2026 · ${tarifa.toLocaleString("es-CO")}/kWh
+                  {MESES[mesActual]} {anioActual} · {empresaEnergia} $
+                  {tarifa.toLocaleString("es-CO")}/kWh
                 </Text>
               </View>
               <Text style={{ fontSize: 28 }}>🏢</Text>
@@ -283,7 +387,9 @@ export default function EmpresaInicio() {
 
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <Text style={styles.sectionTitle}>Resumen del mes · 2026</Text>
+              <Text style={styles.sectionTitle}>
+                Resumen · {MESES[mesActual]} {anioActual}
+              </Text>
               <TouchableOpacity
                 onPress={() => {
                   setNuevaMeta(String(meta));
@@ -480,6 +586,15 @@ export default function EmpresaInicio() {
               </View>
             </View>
           </View>
+
+          <TouchableOpacity
+            style={styles.cerrarMesBtn}
+            onPress={() => setShowCierreModal(true)}
+          >
+            <Text style={styles.cerrarMesBtnText}>
+              📅 Cerrar mes y guardar historial
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
         <BottomNav tipo="empresa" />
 
@@ -565,7 +680,7 @@ export default function EmpresaInicio() {
                             styles.horarioBtnTextActive,
                         ]}
                       >
-                        {h.dias} día{h.dias > 1 ? "s" : ""}/sem · máx{" "}
+                        {h.dias} día{h.dias > 1 ? "s" : ""} · máx{" "}
                         {h.maxHoras / h.dias}h/día
                       </Text>
                     </TouchableOpacity>
@@ -663,7 +778,7 @@ export default function EmpresaInicio() {
 
         {showMetaModal && (
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalBox, { maxHeight: 280 }]}>
+            <View style={[styles.modalBox, { maxHeight: 320 }]}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Editar meta mensual</Text>
                 <TouchableOpacity onPress={() => setShowMetaModal(false)}>
@@ -674,12 +789,9 @@ export default function EmpresaInicio() {
                 <Text style={styles.inputLabel}>NUEVA META (COP)</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Ej. 2.800.000"
+                  placeholder="Ej. 2800000"
                   value={nuevaMeta}
-                  onChangeText={(v) => {
-                    const clean = v.replace(/\./g, "");
-                    setNuevaMeta(clean);
-                  }}
+                  onChangeText={(v) => setNuevaMeta(v.replace(/\./g, ""))}
                   keyboardType="numeric"
                 />
                 {nuevaMeta ? (
@@ -722,6 +834,110 @@ export default function EmpresaInicio() {
                     }}
                   >
                     <Text style={styles.btnText}>Guardar meta</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {showCierreModal && (
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalBox, { maxHeight: 380 }]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>📅 Cerrar mes</Text>
+                <TouchableOpacity onPress={() => setShowCierreModal(false)}>
+                  <Text style={{ fontSize: 18, color: "#6b7c74" }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{ padding: 20 }}>
+                <Text style={styles.cierreText}>
+                  ¿Deseas cerrar {MESES[mesActual === 0 ? 11 : mesActual - 1]}{" "}
+                  {mesActual === 0 ? anioActual - 1 : anioActual} y guardar los
+                  datos en tu historial?
+                </Text>
+                <View style={styles.cierreResumen}>
+                  <Text style={styles.cierreResumenLabel}>Consumo total</Text>
+                  <Text style={styles.cierreResumenVal}>
+                    {totalKwh.toFixed(1)} kWh
+                  </Text>
+                  <Text style={styles.cierreResumenLabel}>Gasto total</Text>
+                  <Text style={styles.cierreResumenVal}>
+                    COP ${Math.round(totalCop).toLocaleString("es-CO")}
+                  </Text>
+                  <Text style={styles.cierreResumenLabel}>vs Meta</Text>
+                  <Text
+                    style={[
+                      styles.cierreResumenVal,
+                      { color: overMeta ? "#e05252" : "#2e8b57" },
+                    ]}
+                  >
+                    {pctMeta}%{" "}
+                    {overMeta ? "⚠️ Sobre meta" : "✅ Dentro de meta"}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+                  <TouchableOpacity
+                    style={[styles.btnSecondary, { flex: 1 }]}
+                    onPress={() => setShowCierreModal(false)}
+                  >
+                    <Text
+                      style={{
+                        color: "#1a5c3a",
+                        fontWeight: "600",
+                        textAlign: "center",
+                      }}
+                    >
+                      Cancelar
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.btnPrimary, { flex: 2 }]}
+                    onPress={cerrarMes}
+                  >
+                    <Text style={styles.btnText}>Cerrar y guardar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {showNuevoMesModal && (
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalBox, { maxHeight: 320 }]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>🎉 Nuevo mes</Text>
+              </View>
+              <View style={{ padding: 20 }}>
+                <Text style={styles.cierreText}>
+                  ¡Mes cerrado! Ahora estás en {MESES[new Date().getMonth()]}{" "}
+                  {new Date().getFullYear()}.{"\n\n"}¿Deseas continuar con los
+                  mismos sectores o modificarlos?
+                </Text>
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+                  <TouchableOpacity
+                    style={[styles.btnSecondary, { flex: 1 }]}
+                    onPress={() => {
+                      setShowNuevoMesModal(false);
+                      setShowModal(true);
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: "#1a5c3a",
+                        fontWeight: "600",
+                        textAlign: "center",
+                      }}
+                    >
+                      Modificar
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.btnPrimary, { flex: 2 }]}
+                    onPress={() => setShowNuevoMesModal(false)}
+                  >
+                    <Text style={styles.btnText}>Continuar igual</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -896,6 +1112,16 @@ const styles = StyleSheet.create({
   dotsRow: { flexDirection: "row", gap: 5 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#b2d8c4" },
   dotActive: { width: 16, borderRadius: 3, backgroundColor: "#1a5c3a" },
+  cerrarMesBtn: {
+    backgroundColor: "#e8f5ee",
+    borderWidth: 1.5,
+    borderColor: "#b2d8c4",
+    borderRadius: 16,
+    padding: 14,
+    alignItems: "center",
+    marginBottom: 30,
+  },
+  cerrarMesBtnText: { fontSize: 14, fontWeight: "700", color: "#1a5c3a" },
   modalOverlay: {
     position: "absolute",
     top: 0,
@@ -994,4 +1220,23 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   btnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  cierreText: {
+    fontSize: 14,
+    color: "#0f2e1e",
+    lineHeight: 22,
+    marginBottom: 16,
+  },
+  cierreResumen: {
+    backgroundColor: "#e8f5ee",
+    borderRadius: 12,
+    padding: 14,
+    gap: 6,
+  },
+  cierreResumenLabel: { fontSize: 11, color: "#6b7c74" },
+  cierreResumenVal: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0f2e1e",
+    marginBottom: 4,
+  },
 });

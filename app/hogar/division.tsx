@@ -18,7 +18,7 @@ import { getTarifaHogar } from "../../lib/tarifas";
 const DAYS = 30;
 
 export default function Division() {
-  const [personas, setPersonas] = useState<string[]>(["Yo"]);
+  const [personas, setPersonas] = useState<any[]>([]);
   const [totalKwh, setTotalKwh] = useState(0);
   const [totalCop, setTotalCop] = useState(0);
   const [showModal, setShowModal] = useState(false);
@@ -29,11 +29,11 @@ export default function Division() {
 
   useFocusEffect(
     useCallback(() => {
-      cargarConsumo();
+      cargarDatos();
     }, []),
   );
 
-  const cargarConsumo = async () => {
+  const cargarDatos = async () => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -58,7 +58,7 @@ export default function Division() {
 
     const { data: aparatos } = await supabase
       .from("aparatos")
-      .select("watts, horas_dia, activo")
+      .select("watts, horas_dia")
       .eq("usuario_id", user.id)
       .eq("activo", true);
 
@@ -68,41 +68,74 @@ export default function Division() {
         0,
       );
       setTotalKwh(kwh);
-      setTotalCop(kwh * tarifaReal);
+      setTotalCop(Math.round(kwh * tarifaReal));
+    }
+
+    const { data: personasDB } = await supabase
+      .from("division_personas")
+      .select("*")
+      .eq("usuario_id", user.id)
+      .order("created_at", { ascending: true });
+
+    if (personasDB && personasDB.length > 0) {
+      setPersonas(personasDB);
+    } else {
+      const { data: inserted } = await supabase
+        .from("division_personas")
+        .insert({ usuario_id: user.id, nombre: "Yo" })
+        .select();
+      if (inserted) setPersonas(inserted);
     }
   };
 
   const agregarPersona = () => {
     if (personas.length >= 10) {
-      Alert.alert(
-        "Máximo",
-        "Puedes dividir la cuenta entre máximo 10 personas",
-      );
+      Alert.alert("Máximo", "Puedes dividir entre máximo 10 personas");
       return;
     }
     setShowModal(true);
   };
 
-  const confirmarPersona = () => {
+  const confirmarPersona = async () => {
     if (!nuevoNombre.trim()) {
       Alert.alert("Error", "Ingresa el nombre de la persona");
       return;
     }
-    setPersonas([...personas, nuevoNombre.trim()]);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data } = await supabase
+      .from("division_personas")
+      .insert({ usuario_id: user.id, nombre: nuevoNombre.trim() })
+      .select();
+
+    if (data) setPersonas([...personas, ...data]);
     setNuevoNombre("");
     setShowModal(false);
   };
 
-  const eliminarPersona = (i: number) => {
-    if (personas.length <= 1) {
-      Alert.alert("Mínimo", "Debe haber al menos 1 persona");
+  const eliminarPersona = async (id: string, nombre: string) => {
+    if (nombre === "Yo") {
+      Alert.alert("Error", "No puedes eliminar tu propio registro");
       return;
     }
-    setPersonas(personas.filter((_, idx) => idx !== i));
+    Alert.alert("Eliminar", `¿Eliminar a ${nombre}?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Eliminar",
+        style: "destructive",
+        onPress: async () => {
+          await supabase.from("division_personas").delete().eq("id", id);
+          setPersonas(personas.filter((p) => p.id !== id));
+        },
+      },
+    ]);
   };
 
-  const cada = Math.round(totalCop / personas.length);
-  const pct = Math.round(100 / personas.length);
+  const cada = personas.length > 0 ? Math.round(totalCop / personas.length) : 0;
+  const pct = personas.length > 0 ? Math.round(100 / personas.length) : 0;
 
   return (
     <View style={styles.container}>
@@ -112,7 +145,7 @@ export default function Division() {
           <Text style={styles.sectionTitle}>Consumo estimado del mes</Text>
           <Text style={styles.totalKwh}>{totalKwh.toFixed(1)} kWh</Text>
           <Text style={styles.totalCop}>
-            COP ${Math.round(totalCop).toLocaleString("es-CO")}
+            COP ${totalCop.toLocaleString("es-CO")}
           </Text>
           <Text style={styles.hint}>
             Tarifa {empresaEnergia} 2026: ${tarifa}/kWh · Estrato {estrato}
@@ -130,15 +163,17 @@ export default function Division() {
               </TouchableOpacity>
             )}
           </View>
-          {personas.map((p, i) => (
-            <View key={i} style={styles.personRow}>
+          {personas.map((p) => (
+            <View key={p.id} style={styles.personRow}>
               <Text style={styles.personIcon}>👤</Text>
-              <Text style={styles.personName}>{p}</Text>
+              <Text style={styles.personName}>{p.nombre}</Text>
               <Text style={styles.personAmount}>
                 COP ${cada.toLocaleString("es-CO")}
               </Text>
-              {i !== 0 && (
-                <TouchableOpacity onPress={() => eliminarPersona(i)}>
+              {p.nombre !== "Yo" && (
+                <TouchableOpacity
+                  onPress={() => eliminarPersona(p.id, p.nombre)}
+                >
                   <Text style={styles.deleteBtn}>🗑</Text>
                 </TouchableOpacity>
               )}
@@ -157,18 +192,19 @@ export default function Division() {
 
         <View style={styles.alertCard}>
           <Text style={styles.alertText}>
-            💡 El cálculo se basa en el consumo de tus aparatos activos con la
-            tarifa {empresaEnergia} 2026 estrato {estrato}.
+            💡 El cálculo usa la tarifa real {empresaEnergia} 2026 estrato{" "}
+            {estrato} (${tarifa}/kWh). El mismo valor que aparece en tus
+            aparatos.
           </Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Resumen de la división</Text>
-          {personas.map((p, i) => (
-            <View key={i} style={styles.splitRow}>
+          {personas.map((p) => (
+            <View key={p.id} style={styles.splitRow}>
               <Text style={styles.splitIcon}>👤</Text>
               <View style={styles.splitInfo}>
-                <Text style={styles.splitName}>{p}</Text>
+                <Text style={styles.splitName}>{p.nombre}</Text>
                 <Text style={styles.splitPct}>{pct}% de la factura</Text>
               </View>
               <Text style={styles.splitAmount}>
@@ -179,7 +215,7 @@ export default function Division() {
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total estimado</Text>
             <Text style={styles.totalAmount}>
-              COP ${Math.round(totalCop).toLocaleString("es-CO")}
+              COP ${totalCop.toLocaleString("es-CO")}
             </Text>
           </View>
         </View>
@@ -191,7 +227,7 @@ export default function Division() {
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>Agregar persona</Text>
             <Text style={styles.modalSub}>
-              ¿Cómo se llama la persona que comparte el gasto?
+              ¿Cómo se llama quien comparte el gasto?
             </Text>
             <TextInput
               style={styles.modalInput}
