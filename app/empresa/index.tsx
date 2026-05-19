@@ -169,28 +169,8 @@ export default function EmpresaInicio() {
     const mesActualNum = ahora.getMonth();
     const anioActualNum = ahora.getFullYear();
 
-    const { data: existing } = await supabase
-      .from("historial_empresa")
-      .select("id")
-      .eq("usuario_id", user.id)
-      .eq("mes", mesActualNum)
-      .eq("anio", anioActualNum)
-      .eq("cerrado", false)
-      .single();
-
-    if (existing) {
-      await supabase
-        .from("historial_empresa")
-        .update({
-          total_kwh: totalKwh,
-          total_cop: totalCop,
-          meta,
-          sectores,
-          cerrado: true,
-        })
-        .eq("id", existing.id);
-    } else {
-      await supabase.from("historial_empresa").insert({
+    await supabase.from("historial_empresa").upsert(
+      {
         usuario_id: user.id,
         mes: mesActualNum,
         anio: anioActualNum,
@@ -199,22 +179,26 @@ export default function EmpresaInicio() {
         meta,
         sectores,
         cerrado: true,
-      });
-    }
+      },
+      { onConflict: "usuario_id,mes,anio" },
+    );
 
     const mesNuevo = mesActualNum === 11 ? 0 : mesActualNum + 1;
     const anioNuevo = mesActualNum === 11 ? anioActualNum + 1 : anioActualNum;
 
-    await supabase.from("historial_empresa").insert({
-      usuario_id: user.id,
-      mes: mesNuevo,
-      anio: anioNuevo,
-      total_kwh: 0,
-      total_cop: 0,
-      meta,
-      sectores,
-      cerrado: false,
-    });
+    await supabase.from("historial_empresa").upsert(
+      {
+        usuario_id: user.id,
+        mes: mesNuevo,
+        anio: anioNuevo,
+        total_kwh: 0,
+        total_cop: 0,
+        meta,
+        sectores,
+        cerrado: false,
+      },
+      { onConflict: "usuario_id,mes,anio" },
+    );
 
     setShowCierreModal(false);
     setShowNuevoMesModal(true);
