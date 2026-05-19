@@ -91,7 +91,7 @@ export default function EmpresaInicio() {
   const [empresaEnergia, setEmpresaEnergia] = useState("EPM");
   const [tipoActivos, setTipoActivos] = useState("activos_empresa");
   const [tarifa, setTarifa] = useState(1141);
-  const [meta, setMeta] = useState(2800000);
+  const [meta, setMeta] = useState(0);
   const [sectores, setSectores] = useState<any[]>([]);
   const [mesActual, setMesActual] = useState(new Date().getMonth());
   const [anioActual, setAnioActual] = useState(new Date().getFullYear());
@@ -107,7 +107,6 @@ export default function EmpresaInicio() {
   const [secHorario, setSecHorario] = useState(HORARIOS[4]);
   const [secIcono, setSecIcono] = useState("🏭");
   const [activeIndex, setActiveIndex] = useState(0);
-  const [userId, setUserId] = useState("");
 
   useFocusEffect(
     useCallback(() => {
@@ -120,11 +119,10 @@ export default function EmpresaInicio() {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return;
-    setUserId(user.id);
 
     const { data: usuario } = await supabase
       .from("usuarios")
-      .select("nombre_empresa, empresa_energia, tipo_activos")
+      .select("nombre_empresa, empresa_energia, tipo_activos, meta_mensual")
       .eq("id", user.id)
       .single();
 
@@ -132,6 +130,7 @@ export default function EmpresaInicio() {
       setNombreEmpresa(usuario.nombre_empresa || "Mi Empresa");
       if (usuario.empresa_energia) setEmpresaEnergia(usuario.empresa_energia);
       if (usuario.tipo_activos) setTipoActivos(usuario.tipo_activos);
+      setMeta(usuario.meta_mensual || 2800000);
       if (usuario.empresa_energia && usuario.tipo_activos) {
         const t = await getTarifaEmpresa(
           usuario.empresa_energia,
@@ -146,31 +145,18 @@ export default function EmpresaInicio() {
       .select("*")
       .eq("usuario_id", user.id);
     if (sects) setSectores(sects);
-
-    verificarCierreMes(user.id);
   };
 
-  const verificarCierreMes = async (uid: string) => {
-    const ahora = new Date();
-    const mes = ahora.getMonth();
-    const anio = ahora.getFullYear();
-
-    const { data: ultimo } = await supabase
-      .from("historial_empresa")
-      .select("mes, anio, cerrado")
-      .eq("usuario_id", uid)
-      .order("anio", { ascending: false })
-      .order("mes", { ascending: false })
-      .limit(1)
-      .single();
-
-    if (
-      ultimo &&
-      !ultimo.cerrado &&
-      (ultimo.mes !== mes || ultimo.anio !== anio)
-    ) {
-      setShowCierreModal(true);
-    }
+  const guardarMeta = async (nuevaMetaVal: number) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase
+      .from("usuarios")
+      .update({ meta_mensual: nuevaMetaVal })
+      .eq("id", user.id);
+    setMeta(nuevaMetaVal);
   };
 
   const cerrarMes = async () => {
@@ -180,16 +166,16 @@ export default function EmpresaInicio() {
     if (!user) return;
 
     const ahora = new Date();
-    const mes = ahora.getMonth() === 0 ? 11 : ahora.getMonth() - 1;
-    const anio =
-      ahora.getMonth() === 0 ? ahora.getFullYear() - 1 : ahora.getFullYear();
+    const mesActualNum = ahora.getMonth();
+    const anioActualNum = ahora.getFullYear();
 
     const { data: existing } = await supabase
       .from("historial_empresa")
       .select("id")
       .eq("usuario_id", user.id)
-      .eq("mes", mes)
-      .eq("anio", anio)
+      .eq("mes", mesActualNum)
+      .eq("anio", anioActualNum)
+      .eq("cerrado", false)
       .single();
 
     if (existing) {
@@ -199,36 +185,40 @@ export default function EmpresaInicio() {
           total_kwh: totalKwh,
           total_cop: totalCop,
           meta,
-          sectores: sectores,
+          sectores,
           cerrado: true,
         })
         .eq("id", existing.id);
     } else {
       await supabase.from("historial_empresa").insert({
         usuario_id: user.id,
-        mes,
-        anio,
+        mes: mesActualNum,
+        anio: anioActualNum,
         total_kwh: totalKwh,
         total_cop: totalCop,
         meta,
-        sectores: sectores,
+        sectores,
         cerrado: true,
       });
     }
 
+    const mesNuevo = mesActualNum === 11 ? 0 : mesActualNum + 1;
+    const anioNuevo = mesActualNum === 11 ? anioActualNum + 1 : anioActualNum;
+
     await supabase.from("historial_empresa").insert({
       usuario_id: user.id,
-      mes: ahora.getMonth(),
-      anio: ahora.getFullYear(),
+      mes: mesNuevo,
+      anio: anioNuevo,
       total_kwh: 0,
       total_cop: 0,
       meta,
-      sectores: sectores,
+      sectores,
       cerrado: false,
     });
 
     setShowCierreModal(false);
     setShowNuevoMesModal(true);
+    cargarDatos();
   };
 
   const calcularKwh = () => {
@@ -263,7 +253,6 @@ export default function EmpresaInicio() {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return;
-
     const kwhMes = calcularKwh();
     const { error } = await supabase.from("sectores").upsert(
       {
@@ -276,7 +265,6 @@ export default function EmpresaInicio() {
       },
       { onConflict: "usuario_id,nombre" },
     );
-
     if (error) {
       Alert.alert("Error", error.message);
       return;
@@ -789,7 +777,7 @@ export default function EmpresaInicio() {
                 <Text style={styles.inputLabel}>NUEVA META (COP)</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Ej. 2800000"
+                  placeholder="Ej. 2.800.000"
                   value={nuevaMeta}
                   onChangeText={(v) => setNuevaMeta(v.replace(/\./g, ""))}
                   keyboardType="numeric"
@@ -829,7 +817,7 @@ export default function EmpresaInicio() {
                         Alert.alert("Error", "Ingresa una meta válida");
                         return;
                       }
-                      setMeta(v);
+                      guardarMeta(v);
                       setShowMetaModal(false);
                     }}
                   >
@@ -843,7 +831,7 @@ export default function EmpresaInicio() {
 
         {showCierreModal && (
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalBox, { maxHeight: 380 }]}>
+            <View style={[styles.modalBox, { maxHeight: 400 }]}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>📅 Cerrar mes</Text>
                 <TouchableOpacity onPress={() => setShowCierreModal(false)}>
@@ -852,8 +840,7 @@ export default function EmpresaInicio() {
               </View>
               <View style={{ padding: 20 }}>
                 <Text style={styles.cierreText}>
-                  ¿Deseas cerrar {MESES[mesActual === 0 ? 11 : mesActual - 1]}{" "}
-                  {mesActual === 0 ? anioActual - 1 : anioActual} y guardar los
+                  ¿Deseas cerrar {MESES[mesActual]} {anioActual} y guardar los
                   datos en tu historial?
                 </Text>
                 <View style={styles.cierreResumen}>
@@ -911,9 +898,19 @@ export default function EmpresaInicio() {
               </View>
               <View style={{ padding: 20 }}>
                 <Text style={styles.cierreText}>
-                  ¡Mes cerrado! Ahora estás en {MESES[new Date().getMonth()]}{" "}
-                  {new Date().getFullYear()}.{"\n\n"}¿Deseas continuar con los
-                  mismos sectores o modificarlos?
+                  ¡Mes cerrado! Ahora estás en{" "}
+                  {
+                    MESES[
+                      new Date().getMonth() === 11
+                        ? 0
+                        : new Date().getMonth() + 1
+                    ]
+                  }{" "}
+                  {new Date().getMonth() === 11
+                    ? new Date().getFullYear() + 1
+                    : new Date().getFullYear()}
+                  .{"\n\n"}¿Deseas continuar con los mismos sectores o
+                  modificarlos?
                 </Text>
                 <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
                   <TouchableOpacity

@@ -42,7 +42,7 @@ export default function Costos() {
 
     const { data: usuario } = await supabase
       .from("usuarios")
-      .select("empresa_energia, tipo_activos")
+      .select("empresa_energia, tipo_activos, meta_mensual")
       .eq("id", user.id)
       .single();
 
@@ -53,6 +53,7 @@ export default function Costos() {
         usuario.tipo_activos || "activos_empresa",
       );
       setTarifa(t);
+      if (usuario.meta_mensual) setMeta(usuario.meta_mensual);
     }
 
     const { data: sects } = await supabase
@@ -60,6 +61,18 @@ export default function Costos() {
       .select("*")
       .eq("usuario_id", user.id);
     if (sects) setSectores(sects);
+  };
+
+  const guardarMeta = async (nuevaMetaVal: number) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase
+      .from("usuarios")
+      .update({ meta_mensual: nuevaMetaVal })
+      .eq("id", user.id);
+    setMeta(nuevaMetaVal);
   };
 
   const factor =
@@ -108,9 +121,9 @@ export default function Costos() {
         <View style={styles.gastoCard}>
           <Text style={styles.gastoLabel}>
             {periodo === "dia"
-              ? "Gasto de hoy"
+              ? "Gasto estimado hoy"
               : periodo === "semana"
-                ? "Gasto semanal"
+                ? "Gasto estimado semana"
                 : "Gasto mensual"}
           </Text>
           <Text style={styles.gastoAmount}>{fmt(totalCop)}</Text>
@@ -247,7 +260,9 @@ export default function Costos() {
                   />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.desgNombre}>{s.nombre}</Text>
-                    <Text style={styles.desgPct}>{pct}%</Text>
+                    <Text style={styles.desgPct}>
+                      {pct}% · {kwhS.toFixed(1)} kWh
+                    </Text>
                   </View>
                   <Text
                     style={[
@@ -350,7 +365,7 @@ export default function Costos() {
                     Alert.alert("Error", "Ingresa una meta válida");
                     return;
                   }
-                  setMeta(v);
+                  guardarMeta(v);
                   setShowMetaModal(false);
                 }}
               >
@@ -449,13 +464,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(0,0,0,0.05)",
   },
   desgDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
   desgNombre: { fontSize: 12, fontWeight: "600", color: "#0f2e1e" },
-  desgPct: { fontSize: 11, color: "#6b7c74" },
+  desgPct: { fontSize: 11, color: "#6b7c74", marginTop: 2 },
   desgCop: { fontSize: 12, fontWeight: "700" },
   emptyText: {
     fontSize: 13,

@@ -58,13 +58,14 @@ export default function ReportesEmpresa() {
 
     const { data: usuario } = await supabase
       .from("usuarios")
-      .select("empresa_energia, tipo_activos, nombre_empresa")
+      .select("empresa_energia, tipo_activos, nombre_empresa, meta_mensual")
       .eq("id", user.id)
       .single();
 
     if (usuario) {
       setNombreEmpresa(usuario.nombre_empresa || "Mi Empresa");
       setEmpresaEnergia(usuario.empresa_energia || "EPM");
+      if (usuario.meta_mensual) setMeta(usuario.meta_mensual);
       if (usuario.empresa_energia && usuario.tipo_activos) {
         const t = await getTarifaEmpresa(
           usuario.empresa_energia,
@@ -93,20 +94,42 @@ export default function ReportesEmpresa() {
     } else {
       const ahora = new Date();
       const totalKwh = sects?.reduce((s, x) => s + (x.kwh_mes || 0), 0) || 0;
-      const totalCop = totalKwh * tarifa;
+      const metaActual = usuario?.meta_mensual || 2800000;
       setHistorial([
         {
           id: "actual",
           mes: ahora.getMonth(),
           anio: ahora.getFullYear(),
           total_kwh: totalKwh,
-          total_cop: totalCop,
-          meta: meta,
+          total_cop: totalKwh * tarifa,
+          meta: metaActual,
           sectores: sects || [],
           cerrado: false,
         },
       ]);
     }
+  };
+
+  const eliminarRegistro = (id: string, mes: number, anio: number) => {
+    if (id === "actual") {
+      Alert.alert("Error", "No puedes eliminar el mes en curso.");
+      return;
+    }
+    Alert.alert(
+      "Eliminar registro",
+      `¿Eliminar el historial de ${MESES[mes]} ${anio}? Esta acción no se puede deshacer.`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            await supabase.from("historial_empresa").delete().eq("id", id);
+            cargarDatos();
+          },
+        },
+      ],
+    );
   };
 
   const mesActual = historial[mesSelIdx];
@@ -122,7 +145,7 @@ export default function ReportesEmpresa() {
     mesActual && mesAnterior
       ? Math.round(
           ((mesActual.total_cop - mesAnterior.total_cop) /
-            mesAnterior.total_cop) *
+            Math.max(mesAnterior.total_cop, 1)) *
             100,
         )
       : 0;
@@ -131,13 +154,15 @@ export default function ReportesEmpresa() {
     mesActual && mesAnterior
       ? Math.round(
           ((mesActual.total_kwh - mesAnterior.total_kwh) /
-            mesAnterior.total_kwh) *
+            Math.max(mesAnterior.total_kwh, 1)) *
             100,
         )
       : 0;
 
   const topSector = mesActual?.sectores
-    ? [...mesActual.sectores].sort((a: any, b: any) => b.kwh_mes - a.kwh_mes)[0]
+    ? [...mesActual.sectores].sort(
+        (a: any, b: any) => (b.kwh_mes || 0) - (a.kwh_mes || 0),
+      )[0]
     : null;
 
   const maxKwh =
@@ -147,7 +172,7 @@ export default function ReportesEmpresa() {
   const chartW = width - 72;
   const barW = Math.min(32, chartW / Math.max(historial.length, 1) - 4);
 
-  const generarPDF = async (idx: number | "todos") => {
+  const generarPDF = (idx: number | "todos") => {
     if (idx === "todos") {
       if (historial.length === 0) {
         Alert.alert("Sin datos", "No hay historial disponible para exportar.");
@@ -155,7 +180,7 @@ export default function ReportesEmpresa() {
       }
       Alert.alert(
         "📄 Reporte completo",
-        `Se generaría un PDF con ${historial.length} mes(es) de historial de ${nombreEmpresa}. Esta función estará disponible en la versión de producción.`,
+        `Se generaría un PDF con ${historial.length} mes(es) de historial de ${nombreEmpresa}.\n\nEsta función estará disponible en la versión de producción.`,
         [{ text: "Entendido" }],
       );
     } else {
@@ -163,7 +188,7 @@ export default function ReportesEmpresa() {
       if (!m) return;
       Alert.alert(
         "📄 Reporte mensual",
-        `Se generaría el PDF de ${MESES[m.mes]} ${m.anio} con:\n\n• Consumo: ${m.total_kwh.toFixed(1)} kWh\n• Gasto: ${fmt(m.total_cop)}\n• Meta: ${fmt(m.meta)}\n• Resultado: ${m.total_cop > m.meta ? "⚠️ Sobre meta" : "✅ Dentro de meta"}\n\nEsta función estará disponible en la versión de producción.`,
+        `Reporte de ${MESES[m.mes]} ${m.anio}:\n\n• Consumo: ${m.total_kwh.toFixed(1)} kWh\n• Gasto: ${fmt(m.total_cop)}\n• Meta: ${fmt(m.meta)}\n• Resultado: ${m.total_cop > m.meta ? "⚠️ Sobre meta" : "✅ Dentro de meta"}`,
         [{ text: "Entendido" }],
       );
     }
@@ -220,7 +245,7 @@ export default function ReportesEmpresa() {
               {mesActual ? mesActual.total_kwh.toFixed(0) : 0} kWh
             </Text>
             <Text style={styles.statLbl}>Consumo</Text>
-            {mesAnterior && (
+            {mesAnterior && mesAnterior.total_kwh > 0 && (
               <Text
                 style={[
                   styles.statDelta,
@@ -237,7 +262,7 @@ export default function ReportesEmpresa() {
               ${Math.round((mesActual?.total_cop || 0) / 1000)}k
             </Text>
             <Text style={styles.statLbl}>Gasto</Text>
-            {mesAnterior && (
+            {mesAnterior && mesAnterior.total_cop > 0 && (
               <Text
                 style={[
                   styles.statDelta,
@@ -277,19 +302,19 @@ export default function ReportesEmpresa() {
             <Text style={styles.bullet}>
               •{" "}
               {overMeta
-                ? `⚠️ Se superó la meta en un ${pctMeta - 100}%`
+                ? `⚠️ Superó la meta en un ${pctMeta - 100}%`
                 : `✅ Dentro de la meta (${pctMeta}%)`}
             </Text>
-            {mesAnterior && (
+            {mesAnterior && mesAnterior.total_cop > 0 && (
               <Text style={styles.bullet}>
                 •{" "}
                 {deltaCop > 0
                   ? `↑ Aumentó ${deltaCop}%`
                   : `↓ Redujo ${Math.abs(deltaCop)}%`}{" "}
-                vs {MESES[mesAnterior.mes]}
+                vs {MESES[mesAnterior.mes]} {mesAnterior.anio}
               </Text>
             )}
-            {topSector && (
+            {topSector && topSector.kwh_mes > 0 && (
               <Text style={styles.bullet}>
                 • {topSector.nombre} fue el sector de mayor consumo
               </Text>
@@ -360,7 +385,8 @@ export default function ReportesEmpresa() {
                 <Text style={styles.histHeaderText}>kWh</Text>
                 <Text style={styles.histHeaderText}>Gasto</Text>
                 <Text style={styles.histHeaderText}>Meta</Text>
-                <Text style={styles.histHeaderText}>PDF</Text>
+                <Text style={styles.histHeaderText}>⬇</Text>
+                <Text style={styles.histHeaderText}>🗑</Text>
               </View>
               {historial.map((m, i) => {
                 const pct =
@@ -401,7 +427,14 @@ export default function ReportesEmpresa() {
                       {pct}%
                     </Text>
                     <TouchableOpacity onPress={() => generarPDF(i)}>
-                      <Text style={styles.pdfBtn}>⬇</Text>
+                      <Text style={styles.actionBtn}>⬇</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => eliminarRegistro(m.id, m.mes, m.anio)}
+                    >
+                      <Text style={[styles.actionBtn, { color: "#e05252" }]}>
+                        🗑
+                      </Text>
                     </TouchableOpacity>
                   </TouchableOpacity>
                 );
@@ -415,9 +448,9 @@ export default function ReportesEmpresa() {
             <Text style={styles.alertText}>
               🤖{" "}
               {overMeta
-                ? `En ${MESES[mesActual.mes]} el gasto superó la meta. ${topSector ? `Optimiza el sector ${topSector.nombre} para reducir costos.` : "Revisa tus sectores de mayor consumo."}`
+                ? `En ${MESES[mesActual.mes]} el gasto superó la meta. ${topSector && topSector.kwh_mes > 0 ? `Optimiza el sector ${topSector.nombre} para reducir costos.` : "Revisa tus sectores de mayor consumo."}`
                 : `En ${MESES[mesActual.mes]} el consumo estuvo dentro de la meta. ¡Sigue así!`}
-              {topSector && !overMeta
+              {topSector && topSector.kwh_mes > 0 && !overMeta
                 ? ` Reduciendo 10% en ${topSector.nombre} ahorras ${fmt(Math.round((topSector.kwh_mes || 0) * 0.1 * tarifa))} al mes.`
                 : ""}
             </Text>
@@ -553,7 +586,12 @@ const styles = StyleSheet.create({
   histKwh: { fontSize: 11, color: "#0f2e1e", flex: 1, textAlign: "center" },
   histCop: { fontSize: 11, fontWeight: "600", flex: 1, textAlign: "center" },
   histBadge: { fontSize: 11, fontWeight: "700", flex: 1, textAlign: "center" },
-  pdfBtn: { fontSize: 16, textAlign: "center", flex: 1 },
+  actionBtn: {
+    fontSize: 16,
+    textAlign: "center",
+    flex: 1,
+    paddingHorizontal: 4,
+  },
   alertCard: {
     backgroundColor: "#e8f5ee",
     borderRadius: 10,
