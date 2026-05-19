@@ -42,6 +42,8 @@ export default function ReportesEmpresa() {
   const [meta, setMeta] = useState(2800000);
   const [nombreEmpresa, setNombreEmpresa] = useState("");
   const [empresaEnergia, setEmpresaEnergia] = useState("EPM");
+  const [kwhActual, setKwhActual] = useState(0);
+  const [copActual, setCopActual] = useState(0);
   const [sectoresActuales, setSectoresActuales] = useState<any[]>([]);
 
   useFocusEffect(
@@ -62,16 +64,22 @@ export default function ReportesEmpresa() {
       .eq("id", user.id)
       .single();
 
+    let tarifaActual = 1141;
+    let metaActual = 2800000;
+
     if (usuario) {
       setNombreEmpresa(usuario.nombre_empresa || "Mi Empresa");
       setEmpresaEnergia(usuario.empresa_energia || "EPM");
-      if (usuario.meta_mensual) setMeta(usuario.meta_mensual);
+      if (usuario.meta_mensual) {
+        setMeta(usuario.meta_mensual);
+        metaActual = usuario.meta_mensual;
+      }
       if (usuario.empresa_energia && usuario.tipo_activos) {
-        const t = await getTarifaEmpresa(
+        tarifaActual = await getTarifaEmpresa(
           usuario.empresa_energia,
           usuario.tipo_activos,
         );
-        setTarifa(t);
+        setTarifa(tarifaActual);
       }
     }
 
@@ -79,7 +87,13 @@ export default function ReportesEmpresa() {
       .from("sectores")
       .select("*")
       .eq("usuario_id", user.id);
-    if (sects) setSectoresActuales(sects);
+    if (sects) {
+      setSectoresActuales(sects);
+      const kwh = sects.reduce((s, x) => s + (x.kwh_mes || 0), 0);
+      const cop = kwh * tarifaActual;
+      setKwhActual(kwh);
+      setCopActual(cop);
+    }
 
     const { data: hist } = await supabase
       .from("historial_empresa")
@@ -88,26 +102,34 @@ export default function ReportesEmpresa() {
       .order("anio", { ascending: false })
       .order("mes", { ascending: false });
 
+    const ahora = new Date();
+    const mesHoy = ahora.getMonth();
+    const anioHoy = ahora.getFullYear();
+
+    const kwh = sects?.reduce((s, x) => s + (x.kwh_mes || 0), 0) || 0;
+    const cop = kwh * tarifaActual;
+
+    const mesEnCurso = {
+      id: "actual",
+      mes: mesHoy,
+      anio: anioHoy,
+      total_kwh: kwh,
+      total_cop: cop,
+      meta: metaActual,
+      sectores: sects || [],
+      cerrado: false,
+    };
+
     if (hist && hist.length > 0) {
-      setHistorial(hist);
-      setMesSelIdx(0);
+      const histSinActual = hist.filter(
+        (h) => !(h.mes === mesHoy && h.anio === anioHoy && !h.cerrado),
+      );
+      const mesesCerrados = hist.filter((h) => h.cerrado);
+      setHistorial([mesEnCurso, ...mesesCerrados]);
     } else {
-      const ahora = new Date();
-      const totalKwh = sects?.reduce((s, x) => s + (x.kwh_mes || 0), 0) || 0;
-      const metaActual = usuario?.meta_mensual || 2800000;
-      setHistorial([
-        {
-          id: "actual",
-          mes: ahora.getMonth(),
-          anio: ahora.getFullYear(),
-          total_kwh: totalKwh,
-          total_cop: totalKwh * tarifa,
-          meta: metaActual,
-          sectores: sects || [],
-          cerrado: false,
-        },
-      ]);
+      setHistorial([mesEnCurso]);
     }
+    setMesSelIdx(0);
   };
 
   const eliminarRegistro = (id: string, mes: number, anio: number) => {
@@ -142,19 +164,19 @@ export default function ReportesEmpresa() {
   const overMeta = mesActual && mesActual.total_cop > mesActual.meta;
 
   const deltaCop =
-    mesActual && mesAnterior
+    mesActual && mesAnterior && mesAnterior.total_cop > 0
       ? Math.round(
           ((mesActual.total_cop - mesAnterior.total_cop) /
-            Math.max(mesAnterior.total_cop, 1)) *
+            mesAnterior.total_cop) *
             100,
         )
       : 0;
 
   const deltaKwh =
-    mesActual && mesAnterior
+    mesActual && mesAnterior && mesAnterior.total_kwh > 0
       ? Math.round(
           ((mesActual.total_kwh - mesAnterior.total_kwh) /
-            Math.max(mesAnterior.total_kwh, 1)) *
+            mesAnterior.total_kwh) *
             100,
         )
       : 0;
@@ -222,7 +244,9 @@ export default function ReportesEmpresa() {
                 : "Sin datos"}
             </Text>
             {mesActual && !mesActual.cerrado && (
-              <Text style={styles.monthSub}>Mes en curso</Text>
+              <Text style={styles.monthSub}>
+                📍 Mes en curso · Datos en tiempo real
+              </Text>
             )}
           </View>
           <TouchableOpacity
@@ -291,6 +315,12 @@ export default function ReportesEmpresa() {
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>
               Resumen de {MESES[mesActual.mes]} {mesActual.anio}
+              {!mesActual.cerrado && (
+                <Text style={{ fontSize: 11, color: "#2e8b57" }}>
+                  {" "}
+                  · En curso
+                </Text>
+              )}
             </Text>
             <Text style={styles.bullet}>
               • Consumo total: {mesActual.total_kwh.toFixed(1)} kWh
@@ -345,9 +375,11 @@ export default function ReportesEmpresa() {
                       fill={
                         isActive
                           ? "#1a5c3a"
-                          : m.total_cop > m.meta
-                            ? "#e05252"
-                            : "#b2d8c4"
+                          : !m.cerrado
+                            ? "#7ee8a2"
+                            : m.total_cop > m.meta
+                              ? "#e05252"
+                              : "#b2d8c4"
                       }
                     />
                   </G>
@@ -375,9 +407,7 @@ export default function ReportesEmpresa() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Historial mensual</Text>
           {historial.length === 0 ? (
-            <Text style={styles.emptyText}>
-              Cierra tu primer mes para ver el historial.
-            </Text>
+            <Text style={styles.emptyText}>No hay historial disponible.</Text>
           ) : (
             <>
               <View style={styles.histHeader}>
@@ -406,7 +436,7 @@ export default function ReportesEmpresa() {
                         {MESES[m.mes].substring(0, 3)} {m.anio}
                       </Text>
                       {!m.cerrado && (
-                        <Text style={styles.histCurso}>En curso</Text>
+                        <Text style={styles.histCurso}>📍 En curso</Text>
                       )}
                     </View>
                     <Text style={styles.histKwh}>{m.total_kwh.toFixed(0)}</Text>
@@ -432,7 +462,12 @@ export default function ReportesEmpresa() {
                     <TouchableOpacity
                       onPress={() => eliminarRegistro(m.id, m.mes, m.anio)}
                     >
-                      <Text style={[styles.actionBtn, { color: "#e05252" }]}>
+                      <Text
+                        style={[
+                          styles.actionBtn,
+                          { color: m.id === "actual" ? "#b2d8c4" : "#e05252" },
+                        ]}
+                      >
                         🗑
                       </Text>
                     </TouchableOpacity>
