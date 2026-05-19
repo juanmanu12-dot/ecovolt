@@ -1,14 +1,14 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
-    Alert,
-    Dimensions,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Carousel from "react-native-reanimated-carousel";
@@ -191,8 +191,8 @@ export default function EmpresaInicio() {
         usuario_id: user.id,
         mes: mesNuevo,
         anio: anioNuevo,
-        total_kwh: 0,
-        total_cop: 0,
+        total_kwh: totalKwh,
+        total_cop: totalCop,
         meta,
         sectores,
         cerrado: false,
