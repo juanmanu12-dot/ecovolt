@@ -11,12 +11,42 @@ import {
 } from "react-native";
 import { supabase } from "../../lib/supabase";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const validarEmail = (email: string, tipo: string) => {
+  if (!EMAIL_REGEX.test(email)) return "Ingresa un correo válido";
+  const dominio = email.split("@")[1]?.toLowerCase();
+  if (tipo === "estudiante") {
+    const dominiosEdu = [
+      "edu.co",
+      "edu",
+      "ac.uk",
+      "edu.com",
+      "eafit.edu.co",
+      "unal.edu.co",
+      "udea.edu.co",
+      "javeriana.edu.co",
+      "uniandes.edu.co",
+      "univalencia.edu.co",
+    ];
+    const esInstitucional =
+      dominiosEdu.some((d) => dominio.endsWith(d)) || dominio.includes("edu");
+    if (!esInstitucional)
+      return "Para estudiante se recomienda un correo institucional (.edu.co)";
+  }
+  return null;
+};
+
 export default function Registro() {
   const router = useRouter();
   const { tipo } = useLocalSearchParams();
   const [nombre, setNombre] = useState("");
   const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [ciudad, setCiudad] = useState("");
   const [estrato, setEstrato] = useState("");
   const [empresaEnergia, setEmpresaEnergia] = useState("");
@@ -25,11 +55,38 @@ export default function Registro() {
   const [tipoActivos, setTipoActivos] = useState("activos_empresa");
   const [loading, setLoading] = useState(false);
 
+  const validarEmailTiempo = (val: string) => {
+    setEmail(val);
+    if (val.length > 5) {
+      const err = validarEmail(val, tipo as string);
+      setEmailError(err || "");
+    } else {
+      setEmailError("");
+    }
+  };
+
   const registrar = async () => {
-    if (!nombre || !email || !password || !ciudad) {
+    if (!nombre || !email || !password || !confirmPassword || !ciudad) {
       Alert.alert("Error", "Completa todos los campos obligatorios");
       return;
     }
+
+    const emailErr = validarEmail(email, tipo as string);
+    if (emailErr) {
+      Alert.alert("Correo inválido", emailErr);
+      return;
+    }
+
+    if (password.length < 6) {
+      Alert.alert("Error", "La contraseña debe tener mínimo 6 caracteres");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert("Error", "Las contraseñas no coinciden");
+      return;
+    }
+
     if (tipo === "hogar" && !estrato) {
       Alert.alert("Error", "Selecciona tu estrato");
       return;
@@ -46,6 +103,7 @@ export default function Registro() {
       Alert.alert("Error", "Selecciona tu empresa de energía");
       return;
     }
+
     setLoading(true);
 
     const { data, error } = await supabase.auth.signUp({ email, password });
@@ -137,6 +195,11 @@ export default function Registro() {
     else router.replace("/empresa");
   };
 
+  const passwordMatch =
+    confirmPassword.length > 0 && password === confirmPassword;
+  const passwordNoMatch =
+    confirmPassword.length > 0 && password !== confirmPassword;
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
@@ -169,25 +232,84 @@ export default function Registro() {
         />
 
         <Text style={styles.label}>CORREO</Text>
+        <Text style={styles.hint}>
+          {tipo === "estudiante"
+            ? "Usa tu correo institucional (.edu.co) o personal"
+            : tipo === "empresa"
+              ? "Correo empresarial o personal"
+              : "Correo personal (Gmail, Outlook, etc.)"}
+        </Text>
         <TextInput
-          style={styles.input}
-          placeholder="correo@ejemplo.com"
+          style={[styles.input, emailError ? styles.inputError : null]}
+          placeholder={
+            tipo === "estudiante"
+              ? "correo@universidad.edu.co"
+              : tipo === "empresa"
+                ? "correo@empresa.com"
+                : "correo@gmail.com"
+          }
           value={email}
-          onChangeText={setEmail}
+          onChangeText={validarEmailTiempo}
           keyboardType="email-address"
           autoCapitalize="none"
         />
+        {emailError ? (
+          <Text style={styles.errorText}>⚠️ {emailError}</Text>
+        ) : null}
 
         <Text style={styles.label}>CONTRASEÑA</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Mínimo 6 caracteres"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+        <View style={styles.passwordRow}>
+          <TextInput
+            style={[styles.input, { flex: 1, marginBottom: 0 }]}
+            placeholder="Mínimo 6 caracteres"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+          />
+          <TouchableOpacity
+            style={styles.eyeBtn}
+            onPress={() => setShowPassword(!showPassword)}
+          >
+            <Text style={styles.eyeText}>{showPassword ? "🙈" : "👁️"}</Text>
+          </TouchableOpacity>
+        </View>
+        {password.length > 0 && password.length < 6 && (
+          <Text style={styles.errorText}>⚠️ Mínimo 6 caracteres</Text>
+        )}
+        {password.length >= 6 && (
+          <Text style={styles.successText}>✅ Contraseña válida</Text>
+        )}
 
-        <Text style={styles.label}>CIUDAD</Text>
+        <Text style={[styles.label, { marginTop: 14 }]}>
+          CONFIRMAR CONTRASEÑA
+        </Text>
+        <View style={styles.passwordRow}>
+          <TextInput
+            style={[
+              styles.input,
+              { flex: 1, marginBottom: 0 },
+              passwordNoMatch && styles.inputError,
+            ]}
+            placeholder="Repite tu contraseña"
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry={!showConfirm}
+          />
+          <TouchableOpacity
+            style={styles.eyeBtn}
+            onPress={() => setShowConfirm(!showConfirm)}
+          >
+            <Text style={styles.eyeText}>{showConfirm ? "🙈" : "👁️"}</Text>
+          </TouchableOpacity>
+        </View>
+        {passwordNoMatch && (
+          <Text style={styles.errorText}>⚠️ Las contraseñas no coinciden</Text>
+        )}
+        {passwordMatch && (
+          <Text style={styles.successText}>✅ Las contraseñas coinciden</Text>
+        )}
+
+        <Text style={[styles.label, { marginTop: 14 }]}>CIUDAD</Text>
         <TextInput
           style={styles.input}
           placeholder="Ej. Medellín"
@@ -421,6 +543,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 14,
   },
+  inputError: { borderColor: "#e05252", backgroundColor: "#fff5f5" },
+  errorText: {
+    fontSize: 11,
+    color: "#e05252",
+    marginBottom: 10,
+    marginTop: -8,
+  },
+  successText: {
+    fontSize: 11,
+    color: "#2e8b57",
+    marginBottom: 10,
+    marginTop: -8,
+  },
+  passwordRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+  eyeBtn: {
+    padding: 10,
+    backgroundColor: "#f4f9f6",
+    borderWidth: 1.5,
+    borderColor: "#b2d8c4",
+    borderRadius: 12,
+  },
+  eyeText: { fontSize: 18 },
   estratoRow: {
     flexDirection: "row",
     gap: 8,
