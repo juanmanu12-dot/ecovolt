@@ -1,13 +1,13 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import {
-    Alert,
-    Dimensions,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import Svg, { G, Rect } from "react-native-svg";
 import BottomNav from "../../components/BottomNav";
@@ -41,10 +41,6 @@ export default function ReportesEmpresa() {
   const [tarifa, setTarifa] = useState(1141);
   const [meta, setMeta] = useState(2800000);
   const [nombreEmpresa, setNombreEmpresa] = useState("");
-  const [empresaEnergia, setEmpresaEnergia] = useState("EPM");
-  const [kwhActual, setKwhActual] = useState(0);
-  const [copActual, setCopActual] = useState(0);
-  const [sectoresActuales, setSectoresActuales] = useState<any[]>([]);
 
   useFocusEffect(
     useCallback(() => {
@@ -69,7 +65,6 @@ export default function ReportesEmpresa() {
 
     if (usuario) {
       setNombreEmpresa(usuario.nombre_empresa || "Mi Empresa");
-      setEmpresaEnergia(usuario.empresa_energia || "EPM");
       if (usuario.meta_mensual) {
         setMeta(usuario.meta_mensual);
         metaActual = usuario.meta_mensual;
@@ -87,18 +82,15 @@ export default function ReportesEmpresa() {
       .from("sectores")
       .select("*")
       .eq("usuario_id", user.id);
-    if (sects) {
-      setSectoresActuales(sects);
-      const kwh = sects.reduce((s, x) => s + (x.kwh_mes || 0), 0);
-      const cop = kwh * tarifaActual;
-      setKwhActual(kwh);
-      setCopActual(cop);
-    }
+
+    const kwhReal = sects?.reduce((s, x) => s + (x.kwh_mes || 0), 0) || 0;
+    const copReal = kwhReal * tarifaActual;
 
     const { data: hist } = await supabase
       .from("historial_empresa")
       .select("*")
       .eq("usuario_id", user.id)
+      .eq("cerrado", true)
       .order("anio", { ascending: false })
       .order("mes", { ascending: false });
 
@@ -106,29 +98,18 @@ export default function ReportesEmpresa() {
     const mesHoy = ahora.getMonth();
     const anioHoy = ahora.getFullYear();
 
-    const kwh = sects?.reduce((s, x) => s + (x.kwh_mes || 0), 0) || 0;
-    const cop = kwh * tarifaActual;
-
     const mesEnCurso = {
       id: "actual",
       mes: mesHoy,
       anio: anioHoy,
-      total_kwh: kwh,
-      total_cop: cop,
+      total_kwh: kwhReal,
+      total_cop: copReal,
       meta: metaActual,
       sectores: sects || [],
       cerrado: false,
     };
 
-    if (hist && hist.length > 0) {
-      const histSinActual = hist.filter(
-        (h) => !(h.mes === mesHoy && h.anio === anioHoy && !h.cerrado),
-      );
-      const mesesCerrados = hist.filter((h) => h.cerrado);
-      setHistorial([mesEnCurso, ...mesesCerrados]);
-    } else {
-      setHistorial([mesEnCurso]);
-    }
+    setHistorial([mesEnCurso, ...(hist || [])]);
     setMesSelIdx(0);
   };
 
@@ -139,7 +120,7 @@ export default function ReportesEmpresa() {
     }
     Alert.alert(
       "Eliminar registro",
-      `¿Eliminar el historial de ${MESES[mes]} ${anio}? Esta acción no se puede deshacer.`,
+      `¿Eliminar el historial de ${MESES[mes]} ${anio}?`,
       [
         { text: "Cancelar", style: "cancel" },
         {
@@ -152,6 +133,111 @@ export default function ReportesEmpresa() {
         },
       ],
     );
+  };
+
+  const generarPDF = async (idx: number | "todos") => {
+    try {
+      let htmlContent = "";
+
+      if (idx === "todos") {
+        if (historial.length === 0) {
+          Alert.alert("Sin datos", "No hay historial disponible.");
+          return;
+        }
+        htmlContent = `
+          <html><body style="font-family: Arial; padding: 20px; color: #0f2e1e;">
+          <h1 style="color: #1a5c3a;">Reporte Energético - ${nombreEmpresa}</h1>
+          <p>Generado el ${new Date().toLocaleDateString("es-CO")}</p>
+          <hr/>
+          ${historial
+            .map(
+              (m) => `
+            <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #b2d8c4; border-radius: 8px;">
+              <h2 style="color: #1a5c3a;">${MESES[m.mes]} ${m.anio} ${!m.cerrado ? "(En curso)" : ""}</h2>
+              <p><b>Consumo:</b> ${m.total_kwh.toFixed(1)} kWh</p>
+              <p><b>Gasto:</b> ${fmt(m.total_cop)}</p>
+              <p><b>Meta:</b> ${fmt(m.meta)}</p>
+              <p><b>Resultado:</b> ${m.total_cop > m.meta ? "⚠️ Sobre meta (" + Math.round((m.total_cop / m.meta) * 100) + "%)" : "✅ Dentro de meta (" + Math.round((m.total_cop / m.meta) * 100) + "%)"}</p>
+            </div>
+          `,
+            )
+            .join("")}
+          </body></html>
+        `;
+      } else {
+        const m = historial[idx];
+        if (!m) return;
+        const pct = m.meta > 0 ? Math.round((m.total_cop / m.meta) * 100) : 0;
+        const sectoresList =
+          m.sectores && m.sectores.length > 0
+            ? m.sectores
+                .map(
+                  (s: any) => `
+            <tr>
+              <td style="padding: 8px;">${s.icono || ""} ${s.nombre}</td>
+              <td style="padding: 8px;">${(s.kwh_mes || 0).toFixed(1)} kWh</td>
+              <td style="padding: 8px;">${fmt((s.kwh_mes || 0) * tarifa)}</td>
+              <td style="padding: 8px;">${m.total_kwh > 0 ? Math.round(((s.kwh_mes || 0) / m.total_kwh) * 100) : 0}%</td>
+            </tr>
+          `,
+                )
+                .join("")
+            : '<tr><td colspan="4" style="padding: 8px;">Sin sectores registrados</td></tr>';
+
+        htmlContent = `
+          <html><body style="font-family: Arial; padding: 20px; color: #0f2e1e;">
+          <h1 style="color: #1a5c3a;">${nombreEmpresa}</h1>
+          <h2>Reporte de ${MESES[m.mes]} ${m.anio}</h2>
+          <p style="color: #6b7c74;">Generado el ${new Date().toLocaleDateString("es-CO")}</p>
+          <hr style="border-color: #b2d8c4;"/>
+
+          <h3 style="color: #1a5c3a;">Resumen del mes</h3>
+          <table width="100%" style="border-collapse: collapse;">
+            <tr><td style="padding: 6px;"><b>Consumo total</b></td><td style="padding: 6px;">${m.total_kwh.toFixed(1)} kWh</td></tr>
+            <tr><td style="padding: 6px;"><b>Gasto total</b></td><td style="padding: 6px;">${fmt(m.total_cop)}</td></tr>
+            <tr><td style="padding: 6px;"><b>Meta mensual</b></td><td style="padding: 6px;">${fmt(m.meta)}</td></tr>
+            <tr><td style="padding: 6px;"><b>vs Meta</b></td><td style="padding: 6px; color: ${m.total_cop > m.meta ? "#e05252" : "#2e8b57"}">${pct}% ${m.total_cop > m.meta ? "⚠️ Sobre meta" : "✅ Dentro de meta"}</td></tr>
+          </table>
+
+          <h3 style="color: #1a5c3a; margin-top: 20px;">Desglose por sector</h3>
+          <table width="100%" border="1" style="border-collapse: collapse; border-color: #b2d8c4;">
+            <tr style="background: #e8f5ee;">
+              <th style="padding: 8px; text-align: left;">Sector</th>
+              <th style="padding: 8px; text-align: left;">kWh</th>
+              <th style="padding: 8px; text-align: left;">Gasto</th>
+              <th style="padding: 8px; text-align: left;">%</th>
+            </tr>
+            ${sectoresList}
+          </table>
+
+          <div style="margin-top: 20px; padding: 15px; background: #e8f5ee; border-radius: 8px;">
+            <p><b>Recomendación:</b> ${
+              m.total_cop > m.meta
+                ? "El gasto superó la meta. Considera optimizar los sectores de mayor consumo."
+                : "Consumo dentro de la meta. ¡Buen trabajo!"
+            }</p>
+          </div>
+          </body></html>
+        `;
+      }
+
+      const RNHTMLtoPDF = require("react-native-html-to-pdf").default;
+      const options = {
+        html: htmlContent,
+        fileName:
+          idx === "todos"
+            ? `Evocolt_${nombreEmpresa}_TodosLosMeses`
+            : `Evocolt_${nombreEmpresa}_${MESES[historial[idx as number]?.mes]}_${historial[idx as number]?.anio}`,
+        directory: "Documents",
+      };
+
+      const file = await RNHTMLtoPDF.convert(options);
+      Alert.alert("✅ PDF generado", `Guardado en:\n${file.filePath}`, [
+        { text: "Entendido" },
+      ]);
+    } catch (error: any) {
+      Alert.alert("Error", "No se pudo generar el PDF: " + error.message);
+    }
   };
 
   const mesActual = historial[mesSelIdx];
@@ -193,28 +279,6 @@ export default function ReportesEmpresa() {
       : 1;
   const chartW = width - 72;
   const barW = Math.min(32, chartW / Math.max(historial.length, 1) - 4);
-
-  const generarPDF = (idx: number | "todos") => {
-    if (idx === "todos") {
-      if (historial.length === 0) {
-        Alert.alert("Sin datos", "No hay historial disponible para exportar.");
-        return;
-      }
-      Alert.alert(
-        "📄 Reporte completo",
-        `Se generaría un PDF con ${historial.length} mes(es) de historial de ${nombreEmpresa}.\n\nEsta función estará disponible en la versión de producción.`,
-        [{ text: "Entendido" }],
-      );
-    } else {
-      const m = historial[idx];
-      if (!m) return;
-      Alert.alert(
-        "📄 Reporte mensual",
-        `Reporte de ${MESES[m.mes]} ${m.anio}:\n\n• Consumo: ${m.total_kwh.toFixed(1)} kWh\n• Gasto: ${fmt(m.total_cop)}\n• Meta: ${fmt(m.meta)}\n• Resultado: ${m.total_cop > m.meta ? "⚠️ Sobre meta" : "✅ Dentro de meta"}`,
-        [{ text: "Entendido" }],
-      );
-    }
-  };
 
   return (
     <View style={styles.container}>
@@ -483,28 +547,54 @@ export default function ReportesEmpresa() {
             <Text style={styles.alertText}>
               🤖{" "}
               {overMeta
-                ? `En ${MESES[mesActual.mes]} el gasto superó la meta. ${topSector && topSector.kwh_mes > 0 ? `Optimiza el sector ${topSector.nombre} para reducir costos.` : "Revisa tus sectores de mayor consumo."}`
+                ? `En ${MESES[mesActual.mes]} el gasto superó la meta. ${topSector && topSector.kwh_mes > 0 ? `Optimiza ${topSector.nombre} para reducir costos.` : "Revisa tus sectores."}`
                 : `En ${MESES[mesActual.mes]} el consumo estuvo dentro de la meta. ¡Sigue así!`}
               {topSector && topSector.kwh_mes > 0 && !overMeta
-                ? ` Reduciendo 10% en ${topSector.nombre} ahorras ${fmt(Math.round((topSector.kwh_mes || 0) * 0.1 * tarifa))} al mes.`
+                ? ` Reduciendo 10% en ${topSector.nombre} ahorras ${fmt(Math.round(topSector.kwh_mes * 0.1 * tarifa))} al mes.`
                 : ""}
             </Text>
           </View>
         )}
 
-        <View style={{ flexDirection: "row", gap: 10, marginBottom: 30 }}>
-          <TouchableOpacity
-            style={[styles.btnPrimary, { flex: 1 }]}
-            onPress={() => generarPDF(mesSelIdx)}
+        <View style={styles.pdfSection}>
+          <Text style={styles.sectionTitle}>Descargar PDF</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginBottom: 12 }}
           >
-            <Text style={styles.btnText}>⬇ PDF este mes</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.btnSecondary, { flex: 1 }]}
-            onPress={() => generarPDF("todos")}
-          >
-            <Text style={styles.btnSecondaryText}>⬇ PDF todos</Text>
-          </TouchableOpacity>
+            {historial.map((m, i) => (
+              <TouchableOpacity
+                key={m.id}
+                style={[styles.mesBtn, mesSelIdx === i && styles.mesBtnActive]}
+                onPress={() => setMesSelIdx(i)}
+              >
+                <Text
+                  style={[
+                    styles.mesBtnText,
+                    mesSelIdx === i && styles.mesBtnTextActive,
+                  ]}
+                >
+                  {MESES[m.mes].substring(0, 3)} {m.anio}
+                </Text>
+                {!m.cerrado && <Text style={styles.mesBtnCurso}>En curso</Text>}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <View style={{ flexDirection: "row", gap: 10, marginBottom: 30 }}>
+            <TouchableOpacity
+              style={[styles.btnPrimary, { flex: 1 }]}
+              onPress={() => generarPDF(mesSelIdx)}
+            >
+              <Text style={styles.btnText}>⬇ PDF este mes</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.btnSecondary, { flex: 1 }]}
+              onPress={() => generarPDF("todos")}
+            >
+              <Text style={styles.btnSecondaryText}>⬇ PDF todos</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
       <BottomNav tipo="empresa" />
@@ -634,6 +724,28 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   alertText: { fontSize: 12, color: "#0f2e1e", lineHeight: 18 },
+  pdfSection: {
+    backgroundColor: "#f4f9f6",
+    borderWidth: 1,
+    borderColor: "#b2d8c4",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  mesBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "#b2d8c4",
+    backgroundColor: "#fff",
+    marginRight: 8,
+    alignItems: "center",
+  },
+  mesBtnActive: { backgroundColor: "#1a5c3a", borderColor: "#1a5c3a" },
+  mesBtnText: { fontSize: 12, fontWeight: "600", color: "#1a5c3a" },
+  mesBtnTextActive: { color: "#fff" },
+  mesBtnCurso: { fontSize: 9, color: "#2e8b57", marginTop: 2 },
   btnPrimary: {
     backgroundColor: "#1a5c3a",
     borderRadius: 16,
