@@ -19,6 +19,21 @@ function fmt(n: number) {
   return "COP $" + Math.round(n).toLocaleString("es-CO");
 }
 
+const MESES = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
+
 export default function Costos() {
   const [periodo, setPeriodo] = useState<"dia" | "semana" | "mes">("mes");
   const [sectores, setSectores] = useState<any[]>([]);
@@ -27,7 +42,9 @@ export default function Costos() {
   const [showMetaModal, setShowMetaModal] = useState(false);
   const [nuevaMeta, setNuevaMeta] = useState("");
   const [empresaEnergia, setEmpresaEnergia] = useState("EPM");
-  const [mesAnterior, setMesAnterior] = useState<any>(null);
+  const [historialAnterior, setHistorialAnterior] = useState<any>(null);
+  const [mesActual, setMesActual] = useState(new Date().getMonth());
+  const [anioActual, setAnioActual] = useState(new Date().getFullYear());
 
   useFocusEffect(
     useCallback(() => {
@@ -63,24 +80,19 @@ export default function Costos() {
       .eq("usuario_id", user.id);
     if (sects) setSectores(sects);
 
-    // Cargar mes anterior desde historial
-    const ahora = new Date();
-    const mesHoy = ahora.getMonth();
-    const anioHoy = ahora.getFullYear();
-    const mesAnt = mesHoy === 0 ? 11 : mesHoy - 1;
-    const anioAnt = mesHoy === 0 ? anioHoy - 1 : anioHoy;
-
-    const { data: histAnt } = await supabase
+    // Cargar el último mes cerrado del historial para comparar
+    const { data: hist } = await supabase
       .from("historial_empresa")
       .select("*")
       .eq("usuario_id", user.id)
-      .eq("mes", mesAnt)
-      .eq("anio", anioAnt)
       .eq("cerrado", true)
+      .order("anio", { ascending: false })
+      .order("mes", { ascending: false })
+      .limit(1)
       .single();
 
-    if (histAnt) setMesAnterior(histAnt);
-    else setMesAnterior(null);
+    if (hist) setHistorialAnterior(hist);
+    else setHistorialAnterior(null);
   };
 
   const guardarMeta = async (nuevaMetaVal: number) => {
@@ -106,20 +118,20 @@ export default function Costos() {
     metaPeriodo > 0 ? Math.round((totalCop / metaPeriodo) * 100) : 0;
   const overMeta = totalCop > metaPeriodo;
 
-  // Comparativa real con mes anterior
-  const copAnterior = mesAnterior
+  const copAnterior = historialAnterior
     ? periodo === "mes"
-      ? mesAnterior.total_cop
+      ? historialAnterior.total_cop
       : periodo === "semana"
-        ? mesAnterior.total_cop / 4.33
-        : mesAnterior.total_cop / 30
+        ? historialAnterior.total_cop / 4.33
+        : historialAnterior.total_cop / 30
     : null;
-  const kwhAnterior = mesAnterior
+
+  const kwhAnterior = historialAnterior
     ? periodo === "mes"
-      ? mesAnterior.total_kwh
+      ? historialAnterior.total_kwh
       : periodo === "semana"
-        ? mesAnterior.total_kwh / 4.33
-        : mesAnterior.total_kwh / 30
+        ? historialAnterior.total_kwh / 4.33
+        : historialAnterior.total_kwh / 30
     : null;
 
   const deltaCop =
@@ -131,25 +143,6 @@ export default function Costos() {
   const ahorroTop = topSector
     ? Math.round(topSector.kwh_mes * 0.1 * factor * tarifa)
     : 0;
-
-  const MESES = [
-    "Enero",
-    "Febrero",
-    "Marzo",
-    "Abril",
-    "Mayo",
-    "Junio",
-    "Julio",
-    "Agosto",
-    "Septiembre",
-    "Octubre",
-    "Noviembre",
-    "Diciembre",
-  ];
-  const ahora = new Date();
-  const mesAnt = ahora.getMonth() === 0 ? 11 : ahora.getMonth() - 1;
-  const anioAnt =
-    ahora.getMonth() === 0 ? ahora.getFullYear() - 1 : ahora.getFullYear();
 
   return (
     <View style={styles.container}>
@@ -184,7 +177,7 @@ export default function Costos() {
               ? "Gasto estimado hoy"
               : periodo === "semana"
                 ? "Gasto estimado semana"
-                : "Gasto mensual"}
+                : `Gasto de ${MESES[mesActual]}`}
           </Text>
           <Text style={styles.gastoAmount}>{fmt(totalCop)}</Text>
           <Text
@@ -261,27 +254,29 @@ export default function Costos() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>
-            Comparación ·{" "}
-            {periodo === "mes"
-              ? `vs ${MESES[mesAnt]} ${anioAnt}`
-              : periodo === "semana"
-                ? "vs semana anterior"
-                : "vs ayer"}
+            {historialAnterior
+              ? `Comparación · ${MESES[mesActual]} vs ${MESES[historialAnterior.mes]} ${historialAnterior.anio}`
+              : "Comparación con mes anterior"}
           </Text>
-          {mesAnterior ? (
+          {historialAnterior ? (
             <>
               <View style={styles.compareGrid}>
-                <View>
+                <View style={styles.compareCol}>
                   <Text style={styles.compareLabel}>
-                    {MESES[mesAnt]} {anioAnt}
+                    {MESES[historialAnterior.mes]} {historialAnterior.anio}
                   </Text>
                   <Text style={styles.compareVal}>{fmt(copAnterior || 0)}</Text>
                   <Text style={styles.compareKwh}>
                     {(kwhAnterior || 0).toFixed(1)} kWh
                   </Text>
                 </View>
-                <View>
-                  <Text style={styles.compareLabel}>Mes actual</Text>
+                <View style={styles.compareArrow}>
+                  <Text style={{ fontSize: 20, color: "#b2d8c4" }}>→</Text>
+                </View>
+                <View style={styles.compareCol}>
+                  <Text style={styles.compareLabel}>
+                    {MESES[mesActual]} {anioActual}
+                  </Text>
                   <Text
                     style={[
                       styles.compareVal,
@@ -296,7 +291,12 @@ export default function Costos() {
                 </View>
               </View>
               {deltaCop !== null && (
-                <View style={styles.compareDelta}>
+                <View
+                  style={[
+                    styles.compareDelta,
+                    { backgroundColor: deltaCop > 0 ? "#fde8e8" : "#e8f5ee" },
+                  ]}
+                >
                   <Text
                     style={[
                       styles.compareDeltaText,
@@ -306,18 +306,18 @@ export default function Costos() {
                     {deltaCop > 0
                       ? `↑ Aumentó ${deltaCop}%`
                       : `↓ Redujo ${Math.abs(deltaCop)}%`}{" "}
-                    vs {MESES[mesAnt]}
+                    vs {MESES[historialAnterior.mes]}
                   </Text>
                 </View>
               )}
             </>
           ) : (
             <View style={styles.noDataBox}>
-              <Text style={styles.noDataText}>
-                📊 Sin datos del mes anterior.
-              </Text>
+              <Text style={styles.noDataIcon}>📊</Text>
+              <Text style={styles.noDataText}>Sin historial previo</Text>
               <Text style={styles.noDataSub}>
-                Cierra el mes actual para ver la comparativa el próximo mes.
+                La comparativa aparecerá cuando cierres tu primer mes desde
+                Inicio → "Cerrar mes y guardar historial".
               </Text>
             </View>
           )}
@@ -352,7 +352,7 @@ export default function Costos() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.desgNombre}>{s.nombre}</Text>
                     <Text style={styles.desgPct}>
-                      {pct}% · {kwhS.toFixed(1)} kWh
+                      {pct}% · {kwhS.toFixed(1)} kWh · {s.num_equipos} equipos
                     </Text>
                   </View>
                   <Text
@@ -542,24 +542,33 @@ const styles = StyleSheet.create({
   },
   barFill: { height: "100%", borderRadius: 5 },
   barLabel: { fontSize: 11, color: "#6b7c74" },
-  compareGrid: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 10,
+  compareGrid: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  compareCol: { flex: 1 },
+  compareArrow: { paddingHorizontal: 8 },
+  compareLabel: {
+    fontSize: 10,
+    color: "#6b7c74",
+    marginBottom: 4,
+    fontWeight: "600",
   },
-  compareLabel: { fontSize: 10, color: "#6b7c74", marginBottom: 4 },
   compareVal: { fontSize: 14, fontWeight: "700", color: "#0f2e1e" },
   compareKwh: { fontSize: 11, color: "#6b7c74", marginTop: 2 },
-  compareDelta: { paddingTop: 8, borderTopWidth: 1, borderTopColor: "#b2d8c4" },
+  compareDelta: { borderRadius: 10, padding: 10 },
   compareDeltaText: { fontSize: 13, fontWeight: "700" },
-  noDataBox: { alignItems: "center", padding: 12 },
+  noDataBox: { alignItems: "center", padding: 16 },
+  noDataIcon: { fontSize: 32, marginBottom: 8 },
   noDataText: {
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 14,
+    fontWeight: "700",
     color: "#6b7c74",
     marginBottom: 4,
   },
-  noDataSub: { fontSize: 11, color: "#6b7c74", textAlign: "center" },
+  noDataSub: {
+    fontSize: 12,
+    color: "#6b7c74",
+    textAlign: "center",
+    lineHeight: 18,
+  },
   desgItem: {
     flexDirection: "row",
     alignItems: "center",

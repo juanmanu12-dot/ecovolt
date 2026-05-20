@@ -80,6 +80,7 @@ export default function ReportesEmpresa() {
       }
     }
 
+    // Sectores actuales para el mes en curso
     const { data: sects } = await supabase
       .from("sectores")
       .select("*")
@@ -88,6 +89,7 @@ export default function ReportesEmpresa() {
     const kwhReal = sects?.reduce((s, x) => s + (x.kwh_mes || 0), 0) || 0;
     const copReal = kwhReal * tarifaActual;
 
+    // Solo meses cerrados del historial
     const { data: hist } = await supabase
       .from("historial_empresa")
       .select("*")
@@ -100,6 +102,7 @@ export default function ReportesEmpresa() {
     const mesHoy = ahora.getMonth();
     const anioHoy = ahora.getFullYear();
 
+    // Mes en curso siempre primero con datos reales
     const mesEnCurso = {
       id: "actual",
       mes: mesHoy,
@@ -186,6 +189,7 @@ export default function ReportesEmpresa() {
                   (s: any) => `
             <tr>
               <td style="padding: 8px;">${s.nombre}</td>
+              <td style="padding: 8px;">${s.num_equipos || 0} equipos</td>
               <td style="padding: 8px;">${(s.kwh_mes || 0).toFixed(1)} kWh</td>
               <td style="padding: 8px;">${fmt((s.kwh_mes || 0) * tarifa)}</td>
               <td style="padding: 8px;">${m.total_kwh > 0 ? Math.round(((s.kwh_mes || 0) / m.total_kwh) * 100) : 0}%</td>
@@ -193,7 +197,7 @@ export default function ReportesEmpresa() {
           `,
                 )
                 .join("")
-            : '<tr><td colspan="4" style="padding: 8px;">Sin sectores registrados</td></tr>';
+            : '<tr><td colspan="5" style="padding: 8px;">Sin sectores registrados</td></tr>';
 
         htmlContent = `
           <html><body style="font-family: Arial; padding: 20px; color: #0f2e1e;">
@@ -219,6 +223,7 @@ export default function ReportesEmpresa() {
           <table width="100%" border="1" style="border-collapse: collapse; border-color: #b2d8c4;">
             <tr style="background: #e8f5ee;">
               <th style="padding: 8px; text-align: left;">Sector</th>
+              <th style="padding: 8px; text-align: left;">Equipos</th>
               <th style="padding: 8px; text-align: left;">kWh</th>
               <th style="padding: 8px; text-align: left;">Gasto</th>
               <th style="padding: 8px; text-align: left;">%</th>
@@ -315,9 +320,7 @@ export default function ReportesEmpresa() {
                 : "Sin datos"}
             </Text>
             {mesActual && !mesActual.cerrado && (
-              <Text style={styles.monthSub}>
-                📍 Mes en curso · Datos en tiempo real
-              </Text>
+              <Text style={styles.monthSub}>📍 Mes en curso</Text>
             )}
           </View>
           <TouchableOpacity
@@ -347,7 +350,7 @@ export default function ReportesEmpresa() {
                   { color: deltaKwh > 0 ? "#e05252" : "#2e8b57" },
                 ]}
               >
-                {deltaKwh > 0 ? "↑" : "↓"} {Math.abs(deltaKwh)}% vs mes ant.
+                {deltaKwh > 0 ? "↑" : "↓"} {Math.abs(deltaKwh)}%
               </Text>
             )}
           </View>
@@ -364,7 +367,7 @@ export default function ReportesEmpresa() {
                   { color: deltaCop > 0 ? "#e05252" : "#2e8b57" },
                 ]}
               >
-                {deltaCop > 0 ? "↑" : "↓"} {Math.abs(deltaCop)}% vs mes ant.
+                {deltaCop > 0 ? "↑" : "↓"} {Math.abs(deltaCop)}%
               </Text>
             )}
           </View>
@@ -385,7 +388,7 @@ export default function ReportesEmpresa() {
         {mesActual && (
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>
-              Resumen de {MESES[mesActual.mes]} {mesActual.anio}
+              Resumen · {MESES[mesActual.mes]} {mesActual.anio}
               {!mesActual.cerrado && (
                 <Text style={{ fontSize: 11, color: "#2e8b57" }}>
                   {" "}
@@ -394,30 +397,29 @@ export default function ReportesEmpresa() {
               )}
             </Text>
             <Text style={styles.bullet}>
-              • Consumo total: {mesActual.total_kwh.toFixed(1)} kWh
+              • Consumo: {mesActual.total_kwh.toFixed(1)} kWh
             </Text>
             <Text style={styles.bullet}>
-              • Gasto total: {fmt(mesActual.total_cop)}
+              • Gasto: {fmt(mesActual.total_cop)}
             </Text>
             <Text style={styles.bullet}>• Meta: {fmt(mesActual.meta)}</Text>
             <Text style={styles.bullet}>
               •{" "}
               {overMeta
-                ? `⚠️ Supero la meta en un ${pctMeta - 100}%`
-                : `✅ Dentro de la meta (${pctMeta}%)`}
+                ? `⚠️ Sobre meta (${pctMeta}%)`
+                : `✅ Dentro de meta (${pctMeta}%)`}
             </Text>
             {mesAnterior && mesAnterior.total_cop > 0 && (
               <Text style={styles.bullet}>
                 •{" "}
-                {deltaCop > 0
-                  ? `↑ Aumento ${deltaCop}%`
-                  : `↓ Redujo ${Math.abs(deltaCop)}%`}{" "}
+                {deltaCop > 0 ? `↑ +${deltaCop}%` : `↓ ${Math.abs(deltaCop)}%`}{" "}
                 vs {MESES[mesAnterior.mes]} {mesAnterior.anio}
               </Text>
             )}
             {topSector && topSector.kwh_mes > 0 && (
               <Text style={styles.bullet}>
-                • {topSector.nombre} fue el sector de mayor consumo
+                • Sector mayor consumo: {topSector.nombre} (
+                {topSector.num_equipos} equipos)
               </Text>
             )}
           </View>
@@ -425,7 +427,7 @@ export default function ReportesEmpresa() {
 
         {historial.length > 1 && (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Evolucion de consumo (kWh)</Text>
+            <Text style={styles.sectionTitle}>Evolución de consumo</Text>
             <Svg width={chartW} height={100} style={{ overflow: "visible" }}>
               {[...historial].reverse().map((m, i) => {
                 const bH = Math.max(4, ((m.total_kwh || 0) / maxKwh) * 80);
@@ -472,6 +474,26 @@ export default function ReportesEmpresa() {
                 </Text>
               ))}
             </View>
+            <View style={styles.chartLegend}>
+              <View style={styles.legendItem}>
+                <View
+                  style={[styles.legendDot, { backgroundColor: "#7ee8a2" }]}
+                />
+                <Text style={styles.legendText}>En curso</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View
+                  style={[styles.legendDot, { backgroundColor: "#b2d8c4" }]}
+                />
+                <Text style={styles.legendText}>Dentro de meta</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View
+                  style={[styles.legendDot, { backgroundColor: "#e05252" }]}
+                />
+                <Text style={styles.legendText}>Sobre meta</Text>
+              </View>
+            </View>
           </View>
         )}
 
@@ -482,12 +504,14 @@ export default function ReportesEmpresa() {
           ) : (
             <>
               <View style={styles.histHeader}>
-                <Text style={[styles.histHeaderText, { flex: 1.5 }]}>Mes</Text>
-                <Text style={styles.histHeaderText}>kWh</Text>
-                <Text style={styles.histHeaderText}>Gasto</Text>
-                <Text style={styles.histHeaderText}>Meta</Text>
-                <Text style={styles.histHeaderText}>⬇</Text>
-                <Text style={styles.histHeaderText}>🗑</Text>
+                <Text style={[styles.histHeaderText, { flex: 2 }]}>Mes</Text>
+                <Text style={[styles.histHeaderText, { flex: 1.5 }]}>kWh</Text>
+                <Text style={[styles.histHeaderText, { flex: 1.5 }]}>
+                  Gasto
+                </Text>
+                <Text style={[styles.histHeaderText, { flex: 1 }]}>Meta</Text>
+                <Text style={[styles.histHeaderText, { flex: 0.5 }]}>⬇</Text>
+                <Text style={[styles.histHeaderText, { flex: 0.5 }]}>🗑</Text>
               </View>
               {historial.map((m, i) => {
                 const pct =
@@ -502,19 +526,21 @@ export default function ReportesEmpresa() {
                     ]}
                     onPress={() => setMesSelIdx(i)}
                   >
-                    <View style={{ flex: 1.5 }}>
+                    <View style={{ flex: 2 }}>
                       <Text style={styles.histMes}>
                         {MESES[m.mes].substring(0, 3)} {m.anio}
                       </Text>
                       {!m.cerrado && (
-                        <Text style={styles.histCurso}>📍 En curso</Text>
+                        <Text style={styles.histCurso}>En curso</Text>
                       )}
                     </View>
-                    <Text style={styles.histKwh}>{m.total_kwh.toFixed(0)}</Text>
+                    <Text style={[styles.histKwh, { flex: 1.5 }]}>
+                      {m.total_kwh.toFixed(0)}
+                    </Text>
                     <Text
                       style={[
                         styles.histCop,
-                        { color: sobre ? "#e05252" : "#2e8b57" },
+                        { flex: 1.5, color: sobre ? "#e05252" : "#2e8b57" },
                       ]}
                     >
                       ${Math.round(m.total_cop / 1000)}k
@@ -522,15 +548,19 @@ export default function ReportesEmpresa() {
                     <Text
                       style={[
                         styles.histBadge,
-                        { color: sobre ? "#e05252" : "#2e8b57" },
+                        { flex: 1, color: sobre ? "#e05252" : "#2e8b57" },
                       ]}
                     >
                       {pct}%
                     </Text>
-                    <TouchableOpacity onPress={() => generarPDF(i)}>
+                    <TouchableOpacity
+                      style={{ flex: 0.5, alignItems: "center" }}
+                      onPress={() => generarPDF(i)}
+                    >
                       <Text style={styles.actionBtn}>⬇</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
+                      style={{ flex: 0.5, alignItems: "center" }}
                       onPress={() => eliminarRegistro(m.id, m.mes, m.anio)}
                     >
                       <Text
@@ -554,7 +584,7 @@ export default function ReportesEmpresa() {
             <Text style={styles.alertText}>
               🤖{" "}
               {overMeta
-                ? `En ${MESES[mesActual.mes]} el gasto supero la meta. ${topSector && topSector.kwh_mes > 0 ? `Optimiza ${topSector.nombre} para reducir costos.` : "Revisa tus sectores."}`
+                ? `En ${MESES[mesActual.mes]} el gasto supero la meta. ${topSector && topSector.kwh_mes > 0 ? `Optimiza ${topSector.nombre} para reducir costos.` : ""}`
                 : `En ${MESES[mesActual.mes]} el consumo estuvo dentro de la meta. Sigue asi!`}
               {topSector && topSector.kwh_mes > 0 && !overMeta
                 ? ` Reduciendo 10% en ${topSector.nombre} ahorras ${fmt(Math.round(topSector.kwh_mes * 0.1 * tarifa))} al mes.`
@@ -686,6 +716,15 @@ const styles = StyleSheet.create({
   },
   chartLabel: { fontSize: 9, color: "#6b7c74", textAlign: "center", flex: 1 },
   chartLabelActive: { color: "#1a5c3a", fontWeight: "700" },
+  chartLegend: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 10,
+    justifyContent: "center",
+  },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: 10, color: "#6b7c74" },
   histHeader: {
     flexDirection: "row",
     paddingVertical: 8,
@@ -698,12 +737,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#6b7c74",
     textTransform: "uppercase",
-    flex: 1,
     textAlign: "center",
   },
   histRow: {
     flexDirection: "row",
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(0,0,0,0.04)",
     alignItems: "center",
@@ -715,15 +753,10 @@ const styles = StyleSheet.create({
   },
   histMes: { fontSize: 11, fontWeight: "600", color: "#0f2e1e" },
   histCurso: { fontSize: 9, color: "#2e8b57", fontWeight: "600" },
-  histKwh: { fontSize: 11, color: "#0f2e1e", flex: 1, textAlign: "center" },
-  histCop: { fontSize: 11, fontWeight: "600", flex: 1, textAlign: "center" },
-  histBadge: { fontSize: 11, fontWeight: "700", flex: 1, textAlign: "center" },
-  actionBtn: {
-    fontSize: 16,
-    textAlign: "center",
-    flex: 1,
-    paddingHorizontal: 4,
-  },
+  histKwh: { fontSize: 11, color: "#0f2e1e", textAlign: "center" },
+  histCop: { fontSize: 11, fontWeight: "600", textAlign: "center" },
+  histBadge: { fontSize: 11, fontWeight: "700", textAlign: "center" },
+  actionBtn: { fontSize: 16, textAlign: "center" },
   alertCard: {
     backgroundColor: "#e8f5ee",
     borderRadius: 10,

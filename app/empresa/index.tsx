@@ -95,6 +95,8 @@ export default function EmpresaInicio() {
   const [sectores, setSectores] = useState<any[]>([]);
   const [mesActual, setMesActual] = useState(new Date().getMonth());
   const [anioActual, setAnioActual] = useState(new Date().getFullYear());
+  const [mesCerrado, setMesCerrado] = useState(new Date().getMonth());
+  const [anioCerrado, setAnioCerrado] = useState(new Date().getFullYear());
   const [showModal, setShowModal] = useState(false);
   const [showMetaModal, setShowMetaModal] = useState(false);
   const [showCierreModal, setShowCierreModal] = useState(false);
@@ -167,14 +169,15 @@ export default function EmpresaInicio() {
     if (!user) return;
 
     const ahora = new Date();
-    const mesActualNum = ahora.getMonth();
-    const anioActualNum = ahora.getFullYear();
+    const mesNum = ahora.getMonth();
+    const anioNum = ahora.getFullYear();
 
+    // Guardar mes actual en historial
     await supabase.from("historial_empresa").upsert(
       {
         usuario_id: user.id,
-        mes: mesActualNum,
-        anio: anioActualNum,
+        mes: mesNum,
+        anio: anioNum,
         total_kwh: totalKwh,
         total_cop: totalCop,
         meta,
@@ -183,6 +186,16 @@ export default function EmpresaInicio() {
       },
       { onConflict: "usuario_id,mes,anio" },
     );
+
+    // Guardar qué mes se cerró para el modal
+    setMesCerrado(mesNum);
+    setAnioCerrado(anioNum);
+
+    // Avanzar al siguiente mes
+    const mesNuevo = mesNum === 11 ? 0 : mesNum + 1;
+    const anioNuevo = mesNum === 11 ? anioNum + 1 : anioNum;
+    setMesActual(mesNuevo);
+    setAnioActual(anioNuevo);
 
     setShowCierreModal(false);
     setShowNuevoMesModal(true);
@@ -201,13 +214,15 @@ export default function EmpresaInicio() {
     setShowModal(true);
   };
 
+  // kWh = (watts_por_equipo / 1000) × horas/día × días/semana × 4.33 × num_equipos
   const calcularKwh = () => {
     const w = parseFloat(secWatts) || 0;
     const h = Math.min(
       parseFloat(secHoras) || 0,
       secHorario.maxHoras / secHorario.dias,
     );
-    return (w / 1000) * h * secHorario.dias * 4.33;
+    const equipos = parseInt(secEquipos) || 1;
+    return (w / 1000) * h * secHorario.dias * 4.33 * equipos;
   };
 
   const totalKwh = sectores.reduce((s, x) => s + (x.kwh_mes || 0), 0);
@@ -216,8 +231,8 @@ export default function EmpresaInicio() {
   const overMeta = totalCop > meta;
 
   const guardarSector = async () => {
-    if (!secNombre || !secWatts || !secHoras) {
-      Alert.alert("Error", "Completa nombre, potencia y horas/día");
+    if (!secNombre || !secWatts || !secHoras || !secEquipos) {
+      Alert.alert("Error", "Completa nombre, equipos, potencia y horas/día");
       return;
     }
     const horasNum = parseFloat(secHoras);
@@ -338,6 +353,8 @@ export default function EmpresaInicio() {
   const kwhPreview = calcularKwh();
   const copPreview = kwhPreview * tarifa;
   const maxHorasDia = secHorario.maxHoras / secHorario.dias;
+  const equiposNum = parseInt(secEquipos) || 1;
+  const kwhPorEquipo = equiposNum > 0 ? kwhPreview / equiposNum : 0;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -491,6 +508,7 @@ export default function EmpresaInicio() {
             const pct =
               totalKwh > 0 ? Math.round((s.kwh_mes / totalKwh) * 100) : 0;
             const cop = s.kwh_mes * tarifa;
+            const copPorEquipo = s.num_equipos > 0 ? cop / s.num_equipos : cop;
             return (
               <View
                 key={s.id}
@@ -504,7 +522,7 @@ export default function EmpresaInicio() {
                   <View style={styles.sectorInfo}>
                     <Text style={styles.sectorNombre}>{s.nombre}</Text>
                     <Text style={styles.sectorMeta}>
-                      {s.num_equipos} equipos · {s.horario}
+                      {s.num_equipos} equipos · {s.watts}W c/u · {s.horario}
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -533,7 +551,8 @@ export default function EmpresaInicio() {
                 </View>
                 <View style={styles.sectorFooter}>
                   <Text style={styles.sectorKwh}>
-                    {s.kwh_mes.toFixed(1)} kWh/mes
+                    {s.kwh_mes.toFixed(1)} kWh · $
+                    {Math.round(copPorEquipo).toLocaleString("es-CO")}/equipo
                   </Text>
                   <Text
                     style={[
@@ -659,6 +678,15 @@ export default function EmpresaInicio() {
                   keyboardType="numeric"
                 />
 
+                <Text style={styles.inputLabel}>POTENCIA POR EQUIPO (W)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ej. 1000W por equipo"
+                  value={secWatts}
+                  onChangeText={setSecWatts}
+                  keyboardType="numeric"
+                />
+
                 <Text style={styles.inputLabel}>DÍAS DE OPERACIÓN</Text>
                 <ScrollView
                   horizontal
@@ -719,17 +747,6 @@ export default function EmpresaInicio() {
                   keyboardType="numeric"
                 />
 
-                <Text style={styles.inputLabel}>
-                  POTENCIA TOTAL DEL SECTOR (W)
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Ej. 50000"
-                  value={secWatts}
-                  onChangeText={setSecWatts}
-                  keyboardType="numeric"
-                />
-
                 {kwhPreview > 0 && (
                   <View style={styles.previewBox}>
                     <View
@@ -740,10 +757,24 @@ export default function EmpresaInicio() {
                       }}
                     >
                       <Text style={styles.previewLabel}>
-                        Consumo estimado/mes
+                        Consumo total del sector/mes
                       </Text>
                       <Text style={styles.previewKwh}>
                         {kwhPreview.toFixed(1)} kWh
+                      </Text>
+                    </View>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        marginBottom: 8,
+                      }}
+                    >
+                      <Text style={styles.previewLabel}>
+                        Consumo por equipo/mes
+                      </Text>
+                      <Text style={styles.previewKwh}>
+                        {kwhPorEquipo.toFixed(1)} kWh
                       </Text>
                     </View>
                     <Text style={styles.previewAmount}>
@@ -751,7 +782,8 @@ export default function EmpresaInicio() {
                     </Text>
                     <Text style={styles.previewTarifa}>
                       {empresaEnergia} 2026: ${tarifa.toLocaleString("es-CO")}
-                      /kWh · {secHorario.dias} días/sem · {secHoras}h/día
+                      /kWh · {equiposNum} equipos × {secWatts}W ·{" "}
+                      {secHorario.dias} días/sem · {secHoras}h/día
                     </Text>
                   </View>
                 )}
@@ -923,17 +955,18 @@ export default function EmpresaInicio() {
 
         {showNuevoMesModal && (
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalBox, { maxHeight: 280 }]}>
+            <View style={[styles.modalBox, { maxHeight: 300 }]}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>🎉 Mes guardado</Text>
               </View>
               <View style={{ padding: 20 }}>
                 <Text style={styles.cierreText}>
-                  ¡{MESES[mesActual]} {anioActual} guardado en tu historial!
-                  Puedes ver el reporte en la sección de Reportes.
+                  ¡{MESES[mesCerrado]} {anioCerrado} guardado correctamente en
+                  tu historial!{"\n\n"}
+                  Ahora estás registrando {MESES[mesActual]} {anioActual}.
                 </Text>
                 <TouchableOpacity
-                  style={[styles.btnPrimary]}
+                  style={styles.btnPrimary}
                   onPress={() => setShowNuevoMesModal(false)}
                 >
                   <Text style={styles.btnText}>Entendido</Text>
@@ -1071,7 +1104,7 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   sectorFooter: { flexDirection: "row", justifyContent: "space-between" },
-  sectorKwh: { fontSize: 12, color: "#6b7c74" },
+  sectorKwh: { fontSize: 11, color: "#6b7c74" },
   sectorCop: { fontSize: 12, fontWeight: "700" },
   alertItem: {
     flexDirection: "row",
