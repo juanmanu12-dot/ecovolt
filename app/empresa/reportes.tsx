@@ -58,7 +58,9 @@ export default function ReportesEmpresa() {
 
     const { data: usuario } = await supabase
       .from("usuarios")
-      .select("empresa_energia, tipo_activos, nombre_empresa, meta_mensual")
+      .select(
+        "empresa_energia, tipo_activos, nombre_empresa, meta_mensual, mes_actual, anio_actual",
+      )
       .eq("id", user.id)
       .single();
 
@@ -80,7 +82,6 @@ export default function ReportesEmpresa() {
       }
     }
 
-    // Sectores actuales para el mes en curso
     const { data: sects } = await supabase
       .from("sectores")
       .select("*")
@@ -89,7 +90,6 @@ export default function ReportesEmpresa() {
     const kwhReal = sects?.reduce((s, x) => s + (x.kwh_mes || 0), 0) || 0;
     const copReal = kwhReal * tarifaActual;
 
-    // Solo meses cerrados del historial
     const { data: hist } = await supabase
       .from("historial_empresa")
       .select("*")
@@ -98,11 +98,10 @@ export default function ReportesEmpresa() {
       .order("anio", { ascending: false })
       .order("mes", { ascending: false });
 
-    const ahora = new Date();
-    const mesHoy = ahora.getMonth();
-    const anioHoy = ahora.getFullYear();
+    // Leer mes actual desde Supabase, no del celular
+    const mesHoy = usuario?.mes_actual ?? new Date().getMonth();
+    const anioHoy = usuario?.anio_actual ?? new Date().getFullYear();
 
-    // Mes en curso siempre primero con datos reales
     const mesEnCurso = {
       id: "actual",
       mes: mesHoy,
@@ -205,7 +204,6 @@ export default function ReportesEmpresa() {
           <h2>Reporte de ${MESES[m.mes]} ${m.anio}</h2>
           <p style="color: #6b7c74;">Generado el ${new Date().toLocaleDateString("es-CO")}</p>
           <hr style="border-color: #b2d8c4;"/>
-
           <h3 style="color: #1a5c3a;">Resumen del mes</h3>
           <table width="100%" style="border-collapse: collapse;">
             <tr><td style="padding: 6px;"><b>Consumo total</b></td><td style="padding: 6px;">${m.total_kwh.toFixed(1)} kWh</td></tr>
@@ -218,7 +216,6 @@ export default function ReportesEmpresa() {
               </td>
             </tr>
           </table>
-
           <h3 style="color: #1a5c3a; margin-top: 20px;">Desglose por sector</h3>
           <table width="100%" border="1" style="border-collapse: collapse; border-color: #b2d8c4;">
             <tr style="background: #e8f5ee;">
@@ -230,7 +227,6 @@ export default function ReportesEmpresa() {
             </tr>
             ${sectoresList}
           </table>
-
           <div style="margin-top: 20px; padding: 15px; background: #e8f5ee; border-radius: 8px;">
             <p><b>Recomendacion:</b> ${
               m.total_cop > m.meta

@@ -125,7 +125,9 @@ export default function EmpresaInicio() {
 
     const { data: usuario } = await supabase
       .from("usuarios")
-      .select("nombre_empresa, empresa_energia, tipo_activos, meta_mensual")
+      .select(
+        "nombre_empresa, empresa_energia, tipo_activos, meta_mensual, mes_actual, anio_actual",
+      )
       .eq("id", user.id)
       .single();
 
@@ -134,6 +136,12 @@ export default function EmpresaInicio() {
       if (usuario.empresa_energia) setEmpresaEnergia(usuario.empresa_energia);
       if (usuario.tipo_activos) setTipoActivos(usuario.tipo_activos);
       setMeta(usuario.meta_mensual || 2800000);
+
+      // Usar mes guardado en BD, si no existe usar fecha actual
+      const ahora = new Date();
+      setMesActual(usuario.mes_actual ?? ahora.getMonth());
+      setAnioActual(usuario.anio_actual ?? ahora.getFullYear());
+
       if (usuario.empresa_energia && usuario.tipo_activos) {
         const t = await getTarifaEmpresa(
           usuario.empresa_energia,
@@ -168,16 +176,12 @@ export default function EmpresaInicio() {
     } = await supabase.auth.getUser();
     if (!user) return;
 
-    const ahora = new Date();
-    const mesNum = ahora.getMonth();
-    const anioNum = ahora.getFullYear();
-
     // Guardar mes actual en historial
     await supabase.from("historial_empresa").upsert(
       {
         usuario_id: user.id,
-        mes: mesNum,
-        anio: anioNum,
+        mes: mesActual,
+        anio: anioActual,
         total_kwh: totalKwh,
         total_cop: totalCop,
         meta,
@@ -188,15 +192,24 @@ export default function EmpresaInicio() {
     );
 
     // Guardar qué mes se cerró para el modal
-    setMesCerrado(mesNum);
-    setAnioCerrado(anioNum);
+    setMesCerrado(mesActual);
+    setAnioCerrado(anioActual);
 
-    // Avanzar al siguiente mes
-    const mesNuevo = mesNum === 11 ? 0 : mesNum + 1;
-    const anioNuevo = mesNum === 11 ? anioNum + 1 : anioNum;
+    // Calcular siguiente mes
+    const mesNuevo = mesActual === 11 ? 0 : mesActual + 1;
+    const anioNuevo = mesActual === 11 ? anioActual + 1 : anioActual;
+
+    // Guardar nuevo mes en Supabase
+    await supabase
+      .from("usuarios")
+      .update({
+        mes_actual: mesNuevo,
+        anio_actual: anioNuevo,
+      })
+      .eq("id", user.id);
+
     setMesActual(mesNuevo);
     setAnioActual(anioNuevo);
-
     setShowCierreModal(false);
     setShowNuevoMesModal(true);
     cargarDatos();
@@ -214,7 +227,6 @@ export default function EmpresaInicio() {
     setShowModal(true);
   };
 
-  // kWh = (watts_por_equipo / 1000) × horas/día × días/semana × 4.33 × num_equipos
   const calcularKwh = () => {
     const w = parseFloat(secWatts) || 0;
     const h = Math.min(
@@ -618,7 +630,7 @@ export default function EmpresaInicio() {
             onPress={() => setShowCierreModal(true)}
           >
             <Text style={styles.cerrarMesBtnText}>
-              📅 Cerrar mes y guardar historial
+              📅 Cerrar {MESES[mesActual]} y guardar historial
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -896,7 +908,9 @@ export default function EmpresaInicio() {
           <View style={styles.modalOverlay}>
             <View style={[styles.modalBox, { maxHeight: 400 }]}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>📅 Cerrar mes</Text>
+                <Text style={styles.modalTitle}>
+                  📅 Cerrar {MESES[mesActual]}
+                </Text>
                 <TouchableOpacity onPress={() => setShowCierreModal(false)}>
                   <Text style={{ fontSize: 18, color: "#6b7c74" }}>✕</Text>
                 </TouchableOpacity>
@@ -961,8 +975,8 @@ export default function EmpresaInicio() {
               </View>
               <View style={{ padding: 20 }}>
                 <Text style={styles.cierreText}>
-                  ¡{MESES[mesCerrado]} {anioCerrado} guardado correctamente en
-                  tu historial!{"\n\n"}
+                  ¡{MESES[mesCerrado]} {anioCerrado} guardado correctamente!
+                  {"\n\n"}
                   Ahora estás registrando {MESES[mesActual]} {anioActual}.
                 </Text>
                 <TouchableOpacity
