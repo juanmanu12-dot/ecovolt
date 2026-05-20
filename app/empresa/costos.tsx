@@ -1,14 +1,14 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import {
-    Alert,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import BottomNav from "../../components/BottomNav";
 import Header from "../../components/Header";
@@ -27,6 +27,7 @@ export default function Costos() {
   const [showMetaModal, setShowMetaModal] = useState(false);
   const [nuevaMeta, setNuevaMeta] = useState("");
   const [empresaEnergia, setEmpresaEnergia] = useState("EPM");
+  const [mesAnterior, setMesAnterior] = useState<any>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -61,6 +62,25 @@ export default function Costos() {
       .select("*")
       .eq("usuario_id", user.id);
     if (sects) setSectores(sects);
+
+    // Cargar mes anterior desde historial
+    const ahora = new Date();
+    const mesHoy = ahora.getMonth();
+    const anioHoy = ahora.getFullYear();
+    const mesAnt = mesHoy === 0 ? 11 : mesHoy - 1;
+    const anioAnt = mesHoy === 0 ? anioHoy - 1 : anioHoy;
+
+    const { data: histAnt } = await supabase
+      .from("historial_empresa")
+      .select("*")
+      .eq("usuario_id", user.id)
+      .eq("mes", mesAnt)
+      .eq("anio", anioAnt)
+      .eq("cerrado", true)
+      .single();
+
+    if (histAnt) setMesAnterior(histAnt);
+    else setMesAnterior(null);
   };
 
   const guardarMeta = async (nuevaMetaVal: number) => {
@@ -86,10 +106,50 @@ export default function Costos() {
     metaPeriodo > 0 ? Math.round((totalCop / metaPeriodo) * 100) : 0;
   const overMeta = totalCop > metaPeriodo;
 
+  // Comparativa real con mes anterior
+  const copAnterior = mesAnterior
+    ? periodo === "mes"
+      ? mesAnterior.total_cop
+      : periodo === "semana"
+        ? mesAnterior.total_cop / 4.33
+        : mesAnterior.total_cop / 30
+    : null;
+  const kwhAnterior = mesAnterior
+    ? periodo === "mes"
+      ? mesAnterior.total_kwh
+      : periodo === "semana"
+        ? mesAnterior.total_kwh / 4.33
+        : mesAnterior.total_kwh / 30
+    : null;
+
+  const deltaCop =
+    copAnterior && copAnterior > 0
+      ? Math.round(((totalCop - copAnterior) / copAnterior) * 100)
+      : null;
+
   const topSector = [...sectores].sort((a, b) => b.kwh_mes - a.kwh_mes)[0];
   const ahorroTop = topSector
     ? Math.round(topSector.kwh_mes * 0.1 * factor * tarifa)
     : 0;
+
+  const MESES = [
+    "Enero",
+    "Febrero",
+    "Marzo",
+    "Abril",
+    "Mayo",
+    "Junio",
+    "Julio",
+    "Agosto",
+    "Septiembre",
+    "Octubre",
+    "Noviembre",
+    "Diciembre",
+  ];
+  const ahora = new Date();
+  const mesAnt = ahora.getMonth() === 0 ? 11 : ahora.getMonth() - 1;
+  const anioAnt =
+    ahora.getMonth() === 0 ? ahora.getFullYear() - 1 : ahora.getFullYear();
 
   return (
     <View style={styles.container}>
@@ -203,33 +263,64 @@ export default function Costos() {
           <Text style={styles.sectionTitle}>
             Comparación ·{" "}
             {periodo === "mes"
-              ? "vs mes anterior"
+              ? `vs ${MESES[mesAnt]} ${anioAnt}`
               : periodo === "semana"
                 ? "vs semana anterior"
                 : "vs ayer"}
           </Text>
-          <View style={styles.compareGrid}>
-            <View>
-              <Text style={styles.compareLabel}>Período anterior</Text>
-              <Text style={styles.compareVal}>{fmt(totalCop * 0.9)}</Text>
-            </View>
-            <View>
-              <Text style={styles.compareLabel}>Período actual</Text>
-              <Text
-                style={[
-                  styles.compareVal,
-                  { color: overMeta ? "#e05252" : "#2e8b57" },
-                ]}
-              >
-                {fmt(totalCop)}
+          {mesAnterior ? (
+            <>
+              <View style={styles.compareGrid}>
+                <View>
+                  <Text style={styles.compareLabel}>
+                    {MESES[mesAnt]} {anioAnt}
+                  </Text>
+                  <Text style={styles.compareVal}>{fmt(copAnterior || 0)}</Text>
+                  <Text style={styles.compareKwh}>
+                    {(kwhAnterior || 0).toFixed(1)} kWh
+                  </Text>
+                </View>
+                <View>
+                  <Text style={styles.compareLabel}>Mes actual</Text>
+                  <Text
+                    style={[
+                      styles.compareVal,
+                      { color: overMeta ? "#e05252" : "#2e8b57" },
+                    ]}
+                  >
+                    {fmt(totalCop)}
+                  </Text>
+                  <Text style={styles.compareKwh}>
+                    {totalKwh.toFixed(1)} kWh
+                  </Text>
+                </View>
+              </View>
+              {deltaCop !== null && (
+                <View style={styles.compareDelta}>
+                  <Text
+                    style={[
+                      styles.compareDeltaText,
+                      { color: deltaCop > 0 ? "#e05252" : "#2e8b57" },
+                    ]}
+                  >
+                    {deltaCop > 0
+                      ? `↑ Aumentó ${deltaCop}%`
+                      : `↓ Redujo ${Math.abs(deltaCop)}%`}{" "}
+                    vs {MESES[mesAnt]}
+                  </Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <View style={styles.noDataBox}>
+              <Text style={styles.noDataText}>
+                📊 Sin datos del mes anterior.
+              </Text>
+              <Text style={styles.noDataSub}>
+                Cierra el mes actual para ver la comparativa el próximo mes.
               </Text>
             </View>
-          </View>
-          <View style={styles.compareDelta}>
-            <Text style={[styles.compareDeltaText, { color: "#e05252" }]}>
-              ↑ {fmt(totalCop * 0.1)} (10%) vs período anterior
-            </Text>
-          </View>
+          )}
         </View>
 
         <View style={styles.card}>
@@ -458,8 +549,17 @@ const styles = StyleSheet.create({
   },
   compareLabel: { fontSize: 10, color: "#6b7c74", marginBottom: 4 },
   compareVal: { fontSize: 14, fontWeight: "700", color: "#0f2e1e" },
-  compareDelta: { paddingTop: 6, borderTopWidth: 1, borderTopColor: "#b2d8c4" },
+  compareKwh: { fontSize: 11, color: "#6b7c74", marginTop: 2 },
+  compareDelta: { paddingTop: 8, borderTopWidth: 1, borderTopColor: "#b2d8c4" },
   compareDeltaText: { fontSize: 13, fontWeight: "700" },
+  noDataBox: { alignItems: "center", padding: 12 },
+  noDataText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#6b7c74",
+    marginBottom: 4,
+  },
+  noDataSub: { fontSize: 11, color: "#6b7c74", textAlign: "center" },
   desgItem: {
     flexDirection: "row",
     alignItems: "center",

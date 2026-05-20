@@ -107,6 +107,7 @@ export default function EmpresaInicio() {
   const [secHorario, setSecHorario] = useState(HORARIOS[4]);
   const [secIcono, setSecIcono] = useState("🏭");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [editando, setEditando] = useState<any>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -183,26 +184,21 @@ export default function EmpresaInicio() {
       { onConflict: "usuario_id,mes,anio" },
     );
 
-    const mesNuevo = mesActualNum === 11 ? 0 : mesActualNum + 1;
-    const anioNuevo = mesActualNum === 11 ? anioActualNum + 1 : anioActualNum;
-
-    await supabase.from("historial_empresa").upsert(
-      {
-        usuario_id: user.id,
-        mes: mesNuevo,
-        anio: anioNuevo,
-        total_kwh: totalKwh,
-        total_cop: totalCop,
-        meta,
-        sectores,
-        cerrado: false,
-      },
-      { onConflict: "usuario_id,mes,anio" },
-    );
-
     setShowCierreModal(false);
     setShowNuevoMesModal(true);
     cargarDatos();
+  };
+
+  const abrirEditar = (s: any) => {
+    setEditando(s);
+    setSecNombre(s.nombre);
+    setSecEquipos(String(s.num_equipos || ""));
+    setSecWatts(String(s.watts || ""));
+    setSecHoras(String(s.horas_dia || ""));
+    const horario = HORARIOS.find((h) => h.label === s.horario) || HORARIOS[4];
+    setSecHorario(horario);
+    setSecIcono(s.icono || "🏭");
+    setShowModal(true);
   };
 
   const calcularKwh = () => {
@@ -238,27 +234,51 @@ export default function EmpresaInicio() {
     } = await supabase.auth.getUser();
     if (!user) return;
     const kwhMes = calcularKwh();
-    const { error } = await supabase.from("sectores").upsert(
-      {
-        usuario_id: user.id,
-        nombre: secNombre,
-        icono: secIcono,
-        num_equipos: parseInt(secEquipos) || 0,
-        horario: secHorario.label,
-        kwh_mes: kwhMes,
-      },
-      { onConflict: "usuario_id,nombre" },
-    );
-    if (error) {
-      Alert.alert("Error", error.message);
-      return;
+
+    if (editando) {
+      const { error } = await supabase
+        .from("sectores")
+        .update({
+          nombre: secNombre,
+          icono: secIcono,
+          num_equipos: parseInt(secEquipos) || 0,
+          horario: secHorario.label,
+          kwh_mes: kwhMes,
+          watts: parseFloat(secWatts),
+          horas_dia: parseFloat(secHoras),
+        })
+        .eq("id", editando.id);
+      if (error) {
+        Alert.alert("Error", error.message);
+        return;
+      }
+    } else {
+      const { error } = await supabase.from("sectores").upsert(
+        {
+          usuario_id: user.id,
+          nombre: secNombre,
+          icono: secIcono,
+          num_equipos: parseInt(secEquipos) || 0,
+          horario: secHorario.label,
+          kwh_mes: kwhMes,
+          watts: parseFloat(secWatts),
+          horas_dia: parseFloat(secHoras),
+        },
+        { onConflict: "usuario_id,nombre" },
+      );
+      if (error) {
+        Alert.alert("Error", error.message);
+        return;
+      }
     }
+
     setSecNombre("");
     setSecEquipos("");
     setSecWatts("");
     setSecHoras("");
     setSecHorario(HORARIOS[4]);
     setSecIcono("🏭");
+    setEditando(null);
     setShowModal(false);
     cargarDatos();
   };
@@ -421,7 +441,16 @@ export default function EmpresaInicio() {
               <Text style={styles.sectionTitle}>Sectores de consumo</Text>
               <TouchableOpacity
                 style={styles.addBtn}
-                onPress={() => setShowModal(true)}
+                onPress={() => {
+                  setEditando(null);
+                  setSecNombre("");
+                  setSecEquipos("");
+                  setSecWatts("");
+                  setSecHoras("");
+                  setSecHorario(HORARIOS[4]);
+                  setSecIcono("🏭");
+                  setShowModal(true);
+                }}
               >
                 <Text style={styles.addBtnText}>+ Sector</Text>
               </TouchableOpacity>
@@ -478,6 +507,12 @@ export default function EmpresaInicio() {
                       {s.num_equipos} equipos · {s.horario}
                     </Text>
                   </View>
+                  <TouchableOpacity
+                    onPress={() => abrirEditar(s)}
+                    style={styles.editSectorBtn}
+                  >
+                    <Text style={styles.editSectorBtnText}>✏</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity onPress={() => eliminarSector(s.id)}>
                     <Text style={styles.deleteBtn}>✕</Text>
                   </TouchableOpacity>
@@ -574,8 +609,15 @@ export default function EmpresaInicio() {
           <View style={styles.modalOverlay}>
             <View style={styles.modalBox}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Agregar sector</Text>
-                <TouchableOpacity onPress={() => setShowModal(false)}>
+                <Text style={styles.modalTitle}>
+                  {editando ? "Editar sector" : "Agregar sector"}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowModal(false);
+                    setEditando(null);
+                  }}
+                >
                   <Text style={{ fontSize: 18, color: "#6b7c74" }}>✕</Text>
                 </TouchableOpacity>
               </View>
@@ -724,7 +766,10 @@ export default function EmpresaInicio() {
                 >
                   <TouchableOpacity
                     style={[styles.btnSecondary, { flex: 1 }]}
-                    onPress={() => setShowModal(false)}
+                    onPress={() => {
+                      setShowModal(false);
+                      setEditando(null);
+                    }}
                   >
                     <Text
                       style={{
@@ -740,7 +785,9 @@ export default function EmpresaInicio() {
                     style={[styles.btnPrimary, { flex: 2 }]}
                     onPress={guardarSector}
                   >
-                    <Text style={styles.btnText}>Guardar sector</Text>
+                    <Text style={styles.btnText}>
+                      {editando ? "Guardar cambios" : "Guardar sector"}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </ScrollView>
@@ -876,51 +923,21 @@ export default function EmpresaInicio() {
 
         {showNuevoMesModal && (
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalBox, { maxHeight: 320 }]}>
+            <View style={[styles.modalBox, { maxHeight: 280 }]}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>🎉 Nuevo mes</Text>
+                <Text style={styles.modalTitle}>🎉 Mes guardado</Text>
               </View>
               <View style={{ padding: 20 }}>
                 <Text style={styles.cierreText}>
-                  ¡Mes cerrado! Ahora estás en{" "}
-                  {
-                    MESES[
-                      new Date().getMonth() === 11
-                        ? 0
-                        : new Date().getMonth() + 1
-                    ]
-                  }{" "}
-                  {new Date().getMonth() === 11
-                    ? new Date().getFullYear() + 1
-                    : new Date().getFullYear()}
-                  .{"\n\n"}¿Deseas continuar con los mismos sectores o
-                  modificarlos?
+                  ¡{MESES[mesActual]} {anioActual} guardado en tu historial!
+                  Puedes ver el reporte en la sección de Reportes.
                 </Text>
-                <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
-                  <TouchableOpacity
-                    style={[styles.btnSecondary, { flex: 1 }]}
-                    onPress={() => {
-                      setShowNuevoMesModal(false);
-                      setShowModal(true);
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: "#1a5c3a",
-                        fontWeight: "600",
-                        textAlign: "center",
-                      }}
-                    >
-                      Modificar
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.btnPrimary, { flex: 2 }]}
-                    onPress={() => setShowNuevoMesModal(false)}
-                  >
-                    <Text style={styles.btnText}>Continuar igual</Text>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  style={[styles.btnPrimary]}
+                  onPress={() => setShowNuevoMesModal(false)}
+                >
+                  <Text style={styles.btnText}>Entendido</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -1029,6 +1046,8 @@ const styles = StyleSheet.create({
   sectorInfo: { flex: 1 },
   sectorNombre: { fontSize: 14, fontWeight: "700", color: "#0f2e1e" },
   sectorMeta: { fontSize: 11, color: "#6b7c74", marginTop: 2 },
+  editSectorBtn: { backgroundColor: "#e8f5ee", borderRadius: 8, padding: 6 },
+  editSectorBtnText: { fontSize: 14, color: "#1a5c3a" },
   deleteBtn: { fontSize: 14, color: "#6b7c74", padding: 4 },
   sectorBarRow: {
     flexDirection: "row",

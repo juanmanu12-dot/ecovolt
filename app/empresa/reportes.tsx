@@ -1,4 +1,6 @@
+import { printToFileAsync } from "expo-print";
 import { useFocusEffect } from "expo-router";
+import { shareAsync } from "expo-sharing";
 import { useCallback, useState } from "react";
 import {
   Alert,
@@ -146,7 +148,7 @@ export default function ReportesEmpresa() {
         }
         htmlContent = `
           <html><body style="font-family: Arial; padding: 20px; color: #0f2e1e;">
-          <h1 style="color: #1a5c3a;">Reporte Energético - ${nombreEmpresa}</h1>
+          <h1 style="color: #1a5c3a;">Reporte Energetico - ${nombreEmpresa}</h1>
           <p>Generado el ${new Date().toLocaleDateString("es-CO")}</p>
           <hr/>
           ${historial
@@ -157,7 +159,16 @@ export default function ReportesEmpresa() {
               <p><b>Consumo:</b> ${m.total_kwh.toFixed(1)} kWh</p>
               <p><b>Gasto:</b> ${fmt(m.total_cop)}</p>
               <p><b>Meta:</b> ${fmt(m.meta)}</p>
-              <p><b>Resultado:</b> ${m.total_cop > m.meta ? "⚠️ Sobre meta (" + Math.round((m.total_cop / m.meta) * 100) + "%)" : "✅ Dentro de meta (" + Math.round((m.total_cop / m.meta) * 100) + "%)"}</p>
+              <p><b>Resultado:</b> ${
+                m.total_cop > m.meta
+                  ? "Sobre meta (" +
+                    Math.round((m.total_cop / m.meta) * 100) +
+                    "%)"
+                  : "Dentro de meta (" +
+                    Math.round((m.total_cop / m.meta) * 100) +
+                    "%)"
+              }
+              </p>
             </div>
           `,
             )
@@ -174,7 +185,7 @@ export default function ReportesEmpresa() {
                 .map(
                   (s: any) => `
             <tr>
-              <td style="padding: 8px;">${s.icono || ""} ${s.nombre}</td>
+              <td style="padding: 8px;">${s.nombre}</td>
               <td style="padding: 8px;">${(s.kwh_mes || 0).toFixed(1)} kWh</td>
               <td style="padding: 8px;">${fmt((s.kwh_mes || 0) * tarifa)}</td>
               <td style="padding: 8px;">${m.total_kwh > 0 ? Math.round(((s.kwh_mes || 0) / m.total_kwh) * 100) : 0}%</td>
@@ -196,7 +207,12 @@ export default function ReportesEmpresa() {
             <tr><td style="padding: 6px;"><b>Consumo total</b></td><td style="padding: 6px;">${m.total_kwh.toFixed(1)} kWh</td></tr>
             <tr><td style="padding: 6px;"><b>Gasto total</b></td><td style="padding: 6px;">${fmt(m.total_cop)}</td></tr>
             <tr><td style="padding: 6px;"><b>Meta mensual</b></td><td style="padding: 6px;">${fmt(m.meta)}</td></tr>
-            <tr><td style="padding: 6px;"><b>vs Meta</b></td><td style="padding: 6px; color: ${m.total_cop > m.meta ? "#e05252" : "#2e8b57"}">${pct}% ${m.total_cop > m.meta ? "⚠️ Sobre meta" : "✅ Dentro de meta"}</td></tr>
+            <tr>
+              <td style="padding: 6px;"><b>vs Meta</b></td>
+              <td style="padding: 6px; color: ${m.total_cop > m.meta ? "#e05252" : "#2e8b57"}">
+                ${pct}% ${m.total_cop > m.meta ? "Sobre meta" : "Dentro de meta"}
+              </td>
+            </tr>
           </table>
 
           <h3 style="color: #1a5c3a; margin-top: 20px;">Desglose por sector</h3>
@@ -211,30 +227,21 @@ export default function ReportesEmpresa() {
           </table>
 
           <div style="margin-top: 20px; padding: 15px; background: #e8f5ee; border-radius: 8px;">
-            <p><b>Recomendación:</b> ${
+            <p><b>Recomendacion:</b> ${
               m.total_cop > m.meta
-                ? "El gasto superó la meta. Considera optimizar los sectores de mayor consumo."
-                : "Consumo dentro de la meta. ¡Buen trabajo!"
+                ? "El gasto supero la meta. Considera optimizar los sectores de mayor consumo."
+                : "Consumo dentro de la meta. Buen trabajo!"
             }</p>
           </div>
           </body></html>
         `;
       }
 
-      const RNHTMLtoPDF = require("react-native-html-to-pdf").default;
-      const options = {
+      const { uri } = await printToFileAsync({
         html: htmlContent,
-        fileName:
-          idx === "todos"
-            ? `Evocolt_${nombreEmpresa}_TodosLosMeses`
-            : `Evocolt_${nombreEmpresa}_${MESES[historial[idx as number]?.mes]}_${historial[idx as number]?.anio}`,
-        directory: "Documents",
-      };
-
-      const file = await RNHTMLtoPDF.convert(options);
-      Alert.alert("✅ PDF generado", `Guardado en:\n${file.filePath}`, [
-        { text: "Entendido" },
-      ]);
+        base64: false,
+      });
+      await shareAsync(uri, { UTI: ".pdf", mimeType: "application/pdf" });
     } catch (error: any) {
       Alert.alert("Error", "No se pudo generar el PDF: " + error.message);
     }
@@ -396,14 +403,14 @@ export default function ReportesEmpresa() {
             <Text style={styles.bullet}>
               •{" "}
               {overMeta
-                ? `⚠️ Superó la meta en un ${pctMeta - 100}%`
+                ? `⚠️ Supero la meta en un ${pctMeta - 100}%`
                 : `✅ Dentro de la meta (${pctMeta}%)`}
             </Text>
             {mesAnterior && mesAnterior.total_cop > 0 && (
               <Text style={styles.bullet}>
                 •{" "}
                 {deltaCop > 0
-                  ? `↑ Aumentó ${deltaCop}%`
+                  ? `↑ Aumento ${deltaCop}%`
                   : `↓ Redujo ${Math.abs(deltaCop)}%`}{" "}
                 vs {MESES[mesAnterior.mes]} {mesAnterior.anio}
               </Text>
@@ -418,7 +425,7 @@ export default function ReportesEmpresa() {
 
         {historial.length > 1 && (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Evolución de consumo (kWh)</Text>
+            <Text style={styles.sectionTitle}>Evolucion de consumo (kWh)</Text>
             <Svg width={chartW} height={100} style={{ overflow: "visible" }}>
               {[...historial].reverse().map((m, i) => {
                 const bH = Math.max(4, ((m.total_kwh || 0) / maxKwh) * 80);
@@ -547,8 +554,8 @@ export default function ReportesEmpresa() {
             <Text style={styles.alertText}>
               🤖{" "}
               {overMeta
-                ? `En ${MESES[mesActual.mes]} el gasto superó la meta. ${topSector && topSector.kwh_mes > 0 ? `Optimiza ${topSector.nombre} para reducir costos.` : "Revisa tus sectores."}`
-                : `En ${MESES[mesActual.mes]} el consumo estuvo dentro de la meta. ¡Sigue así!`}
+                ? `En ${MESES[mesActual.mes]} el gasto supero la meta. ${topSector && topSector.kwh_mes > 0 ? `Optimiza ${topSector.nombre} para reducir costos.` : "Revisa tus sectores."}`
+                : `En ${MESES[mesActual.mes]} el consumo estuvo dentro de la meta. Sigue asi!`}
               {topSector && topSector.kwh_mes > 0 && !overMeta
                 ? ` Reduciendo 10% en ${topSector.nombre} ahorras ${fmt(Math.round(topSector.kwh_mes * 0.1 * tarifa))} al mes.`
                 : ""}
